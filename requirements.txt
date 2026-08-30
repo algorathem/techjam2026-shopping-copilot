@@ -1,3 +1,10 @@
 # Official scoring path is Python 3.10+ standard library only.
 # No third-party packages are required to run:
 #   python -m evaluator.local_evaluator
+#
+# Optional dense hybrid lane (auto-enables when importable):
+#   pip install "numpy>=1.24,<2.1"          # hashed char-ngram backend
+#   pip install sentence-transformers       # MiniLM backend (SHOPPILOT_DENSE=minilm)
+#
+# Controls:
+#   SHOPPILOT_DENSE=none|hash|minilm|auto   (default: auto)

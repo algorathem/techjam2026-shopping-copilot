@@ -1,11 +1,7 @@
 """Stateful shopping agent for the TechJam conversational-search kit.
 
-The official simulator reveals hidden product constraints only when
-``ask_attribute`` is set. This agent therefore (1) parses every user turn into
-slots, (2) always returns ranked ``parent_asin`` values, and (3) asks the next
-useful attribute until the candidate pool is tight or the turn budget is gone.
-
-No network and no extra packages: SQLite FTS5 + in-memory rerank.
+Pipeline: slot parse → query rephrase → hybrid FTS5 retrieve → lexical rerank
+→ optional LLM semantic rerank (SpaceXAI / xAI, off unless SHOPPILOT_LLM=1).
 """
 from __future__ import annotations
 
@@ -15,6 +11,9 @@ import re
 import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from starter.llm_rerank import llm_enabled, rerank as llm_rerank
+from starter.rewrite import rephrase_brief
 
 
 TOKEN_RE = re.compile(r"[a-z0-9]+", re.IGNORECASE)
@@ -119,6 +118,8 @@ class SessionState:
     filled: set[str] = field(default_factory=set)
     browsing: bool = False
     messages: list[str] = field(default_factory=list)
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
 
     def add_constraint(self, value: str) -> None:
         item = re.sub(r"\s+", " ", value).strip(" -;,.\t\n")
@@ -208,7 +209,10 @@ class Agent:
             "message": message,
             "ask_attribute": ask,
             "recommendations": [{"parent_asin": asin, "score": score} for asin, score in ranked[:top_k]],
-            "usage": {"prompt_tokens": 0, "completion_tokens": 0},
+            "usage": {
+                "prompt_tokens": state.prompt_tokens,
+                "completion_tokens": state.completion_tokens,
+            },
         }
 
     def _ingest(self, state: SessionState, message: str) -> None:
@@ -273,6 +277,8 @@ class Agent:
         return None
 
     def _query_terms(self, state: SessionState) -> list[str]:
+        # High-recall FTS query: keep raw constraint tokens. Aggressive
+        # "Imported"/filler stripping lost ~3.5 Hit@10 points on the public set.
         chunks = [state.category, *state.constraints, *state.messages[-2:]]
         tags = state.profile.get("preference_tags") or []
         chunks.extend(str(tag) for tag in tags)
@@ -341,6 +347,32 @@ class Agent:
                 continue
             scored.append((asin, self._score(product, phrases, tags, bm25_map.get(asin, 0.0), state)))
         scored.sort(key=lambda item: item[1], reverse=True)
+        scored = scored[: max(top_k, 20)]
+        if llm_enabled() and scored:
+            brief = rephrase_brief(
+                state.category,
+                state.constraints,
+                state.dont_care,
+                [str(tag) for tag in (state.profile.get("preference_tags") or [])],
+            )
+            payload = [
+                {
+                    "parent_asin": asin,
+                    "title": self._products[asin]["title"],
+                    "store": self._products[asin]["store"],
+                }
+                for asin, _ in scored[:20]
+                if asin in self._products
+            ]
+            order, prompt_tokens, completion_tokens = llm_rerank(brief, payload, top_k)
+            state.prompt_tokens += prompt_tokens
+            state.completion_tokens += completion_tokens
+            if order:
+                score_map = {asin: value for asin, value in scored}
+                merged = [(asin, score_map.get(asin, 0.0)) for asin in order]
+                seen = set(order)
+                merged.extend((asin, value) for asin, value in scored if asin not in seen)
+                scored = merged
         return scored[: max(top_k, 10)]
 
     def _score(

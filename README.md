@@ -50,7 +50,15 @@ Token usage: **0**. Offline fallback is the only path.
 
 ## Setup
 
-Python **3.10+** (tested on 3.13). No pip packages.
+Python **3.10+** (tested on 3.13). No pip packages for the default path.
+
+Optional **LLM semantic rerank** (off unless you set both vars). Judges may disable network, so this only shuffles the already-retrieved top 20:
+
+```powershell
+$env:XAI_API_KEY = "xai-..."           # https://console.x.ai
+$env:SHOPPILOT_LLM = "1"
+python -m evaluator.local_evaluator
+```
 
 ```bash
 git clone <this-repo> techjam-shopping-copilot
@@ -85,8 +93,8 @@ Agent entry point (required interface): `starter/agent.py` → class `Agent`.
   sessions). A local MiniLM index over the 50k titles would help without an API.
 - Intent-override sessions cannot convert before turn 3–4 by protocol; MTTC on
   that slice is structurally higher.
-- No LLM reranker. A cross-encoder on the top 50 would likely lift MRR
-  (mean hit rank is still ~3.6).
+- LLM rerank is opt-in (`SHOPPILOT_LLM=1` + `XAI_API_KEY`). Without a key the
+  lexical path still scores. Mean hit rank is ~3.6; rerank is aimed at MRR.
 - We did not use the private 800-session set. Public-set numbers can overfit.
 
 ## Team

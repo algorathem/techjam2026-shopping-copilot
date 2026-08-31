@@ -1,0 +1,17 @@
+file '/Users/kyecin/Downloads/techjam2026-shopping-copilot/docs/demo_video_frames/01_title.png'
+duration 6
+file '/Users/kyecin/Downloads/techjam2026-shopping-copilot/docs/demo_video_frames/02_problem.png'
+duration 10
+file '/Users/kyecin/Downloads/techjam2026-shopping-copilot/docs/demo_video_frames/03_solution.png'
+duration 10
+file '/Users/kyecin/Downloads/techjam2026-shopping-copilot/docs/demo_video_frames/04_architecture.png'
+duration 11
+file '/Users/kyecin/Downloads/techjam2026-shopping-copilot/docs/demo_video_frames/05_results.png'
+duration 11
+file '/Users/kyecin/Downloads/techjam2026-shopping-copilot/docs/demo_video_frames/06_demo.png'
+duration 12
+file '/Users/kyecin/Downloads/techjam2026-shopping-copilot/docs/demo_video_frames/07_impact.png'
+duration 10
+file '/Users/kyecin/Downloads/techjam2026-shopping-copilot/docs/demo_video_frames/08_end.png'
+duration 8
+file '/Users/kyecin/Downloads/techjam2026-shopping-copilot/docs/demo_video_frames/08_end.png'

@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """Build ShopPilot 9-slide pitch PDF (16:9) from the finalized outline.
 
-Design system:
-  BG jet #12131A · Cyan #00E5FF · Hot pink #FE2C55 · Violet #7A36EB · Slate #8F94A6 · White
+Design system = Astrid brand (same as docs/ShopPilot_Demo_Slides.pptx):
+  BG deep navy #0A121F · Cyan #00D4FF · Rose/magenta #FF2D8F
+  Violet #A855F7 · Muted #8B9BB4 · Gold #FBBF24 · Good #34D399 · White
+
+Do NOT use the one-off outline hexes (#FE2C55 / #00E5FF / #12131A) — those
+were TikTok-red variants, not the project brand.
 
 Output:
   docs/ShopPilot_Pitch_Deck.pdf
@@ -15,7 +19,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from reportlab.lib.colors import Color, HexColor, white, black
+from reportlab.lib.colors import HexColor
 from reportlab.lib.units import inch
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -24,21 +28,23 @@ from reportlab.pdfgen import canvas
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "docs" / "ShopPilot_Pitch_Deck.pdf"
 
-# 16:9 at 1920×1080 pt-equivalent (points)
-W, H = 13.333 * inch, 7.5 * inch  # 960 x 540 pt-ish; use full 13.333x7.5
+# 16:9
+W, H = 13.333 * inch, 7.5 * inch
 
-BG = HexColor("#12131A")
-BG2 = HexColor("#0A0B10")
-CARD = HexColor("#1A1C26")
-CARD2 = HexColor("#222433")
-CYAN = HexColor("#00E5FF")
-PINK = HexColor("#FE2C55")
-VIOLET = HexColor("#7A36EB")
-SLATE = HexColor("#8F94A6")
+# Astrid brand — locked to build_demo_slides.py / architecture diagram
+BG = HexColor("#0A121F")
+BG2 = HexColor("#0E182A")
+CARD = HexColor("#152033")
+CARD2 = HexColor("#1A263C")
+CYAN = HexColor("#00D4FF")
+PINK = HexColor("#FF2D8F")
+VIOLET = HexColor("#A855F7")
+SLATE = HexColor("#8B9BB4")
 WHITE = HexColor("#FFFFFF")
-MUTED = HexColor("#A8ADBD")
-LINE = HexColor("#2A2D3A")
-GOOD = HexColor("#2EE6A6")
+MUTED = HexColor("#8B9BB4")
+LINE = HexColor("#2A3A55")
+GOOD = HexColor("#34D399")
+GOLD = HexColor("#FBBF24")
 
 TOTAL = 9
 
@@ -194,7 +200,7 @@ def slide_01(c: canvas.Canvas):
         ("TechnicalScore", "0.907", "Starter 0.107 · 8.5× lift", CYAN),
         ("Hit Rate@10", "97.5%", "Starter 12.5%", PINK),
         ("MRR", "0.858", "Starter 0.068 · 12.6×", VIOLET),
-        ("MTTC", "2.88 turns", "Starter 9.81 · −70.6%", HexColor("#F5C542")),
+        ("MTTC", "2.88 turns", "Starter 9.81 · −70.6%", GOLD),
     ]
     bw = 2.9 * inch
     for i, (lab, val, delta, col) in enumerate(metrics):
@@ -221,7 +227,7 @@ def slide_02(c: canvas.Canvas):
         ("03", "Mid-Session Preference Shifts",
          'Pivots ("actually forget sneakers…") pollute state with stale tokens.', VIOLET),
         ("04", "Turn Fatigue & Horizon",
-         "Abandonment compounds each unnecessary ask; sessions fail at the ≤10-turn limit.", HexColor("#F5C542")),
+         "Abandonment compounds each unnecessary ask; sessions fail at the ≤10-turn limit.", GOLD),
     ]
     for i, (num, h, b, col) in enumerate(cards):
         col_i, row_i = i % 2, i // 2
@@ -265,7 +271,7 @@ def slide_03(c: canvas.Canvas):
         ("1", "Intent & Entity Triage", "Regex triage: buy/browse, audience, taxonomy anchors.", CYAN),
         ("2", "Provenance-Aware DST", "Slots separate disclosed facts from transient soft prefs.", PINK),
         ("3", "In-Memory Hybrid Recall", "SQLite FTS5 (BM25) fused with NumPy char n-gram dense hash.", VIOLET),
-        ("4", "Dynamic Clarification Ladder", "Asymmetric other-first funnel; skip satisfied slots.", HexColor("#F5C542")),
+        ("4", "Dynamic Clarification Ladder", "Asymmetric other-first funnel; skip satisfied slots.", GOLD),
         ("5", "Constraint-Coverage Reranker", "Exact-match bonuses + leaf-category + audience align.", GOOD),
     ]
     for i, (n, h, b, col) in enumerate(steps):
@@ -487,7 +493,7 @@ def slide_07(c: canvas.Canvas):
         (PINK, "  Astrid  ·  quiet clarity for every aisle"),
         (CYAN, "  You · shoes for my son"),
         (WHITE, "  Astrid: Got it (footwear; boys). Any color…?"),
-        (HexColor("#F5C542"), "  ↳ ask · other"),
+        (GOLD, "  ↳ ask · other"),
         (CYAN, "  You · Actually forget sneakers, dress shoes size 9"),
         (WHITE, "  Astrid: Updated (footwear; size 9). Color?"),
         (PINK, "  ↳ soft wipe · disclosed kept · family=footwear"),
@@ -569,7 +575,7 @@ def slide_09(c: canvas.Canvas):
         ("0.907", "TechnicalScore", CYAN),
         ("97.5%", "Hit@10", PINK),
         ("0.858", "MRR", VIOLET),
-        ("2.88", "MTTC", HexColor("#F5C542")),
+        ("2.88", "MTTC", GOLD),
         ("0", "Tokens", GOOD),
     ]
     for i, (val, lab, col) in enumerate(chips):
@@ -633,8 +639,8 @@ def main() -> None:
 **Rebuild:** `python3 scripts/build_pitch_pdf.py`  
 **Outline source:** finalized 9-slide systems-engineering deck (TechJam 2026 Track 4)
 
-## Design system
-- BG `#12131A` · Cyan `#00E5FF` · Hot pink `#FE2C55` · Violet `#7A36EB` · Slate `#8F94A6`
+## Design system (Astrid brand — same as PPTX)
+- BG `#0A121F` · Cyan `#00D4FF` · Rose `#FF2D8F` · Violet `#A855F7` · Muted `#8B9BB4` · Gold `#FBBF24`
 
 ## Slides
 1. Title & executive scoreboard  

@@ -4,8 +4,8 @@
 **Rebuild:** `python3 scripts/build_pitch_pdf.py`  
 **Outline source:** finalized 9-slide systems-engineering deck (TechJam 2026 Track 4)
 
-## Design system
-- BG `#12131A` · Cyan `#00E5FF` · Hot pink `#FE2C55` · Violet `#7A36EB` · Slate `#8F94A6`
+## Design system (Astrid brand — same as PPTX)
+- BG `#0A121F` · Cyan `#00D4FF` · Rose `#FF2D8F` · Violet `#A855F7` · Muted `#8B9BB4` · Gold `#FBBF24`
 
 ## Slides
 1. Title & executive scoreboard  

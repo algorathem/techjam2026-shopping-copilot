@@ -386,8 +386,32 @@ def slide_solution(prs):
     _footer(s, 3)
 
 
+def _arrow_right(slide, l, t, w=0.18, h=0.22, fill=MUTED2):
+    arr = slide.shapes.add_shape(MSO_SHAPE.RIGHT_ARROW, l, t, w, h)
+    _shape_fill(arr, fill)
+    return arr
+
+
+def _arrow_down(slide, l, t, w=0.18, h=0.28, fill=MUTED2):
+    arr = slide.shapes.add_shape(MSO_SHAPE.DOWN_ARROW, l, t, w, h)
+    _shape_fill(arr, fill)
+    return arr
+
+
+def _arrow_up(slide, l, t, w=0.18, h=0.28, fill=MUTED2):
+    arr = slide.shapes.add_shape(MSO_SHAPE.UP_ARROW, l, t, w, h)
+    _shape_fill(arr, fill)
+    return arr
+
+
+def _chip(slide, l, t, w, h, text, fill=CARD, line=None, size=12, bold=True, color=WHITE):
+    sh = _rect(slide, l, t, w, h, fill, corner=0.2, line=line)
+    _textbox(slide, l, t + Inches(0.08), w, h, [(text, size, bold, color)], align=PP_ALIGN.CENTER)
+    return sh
+
+
 def slide_architecture_overview(prs):
-    """Glanceable architecture: 5-step spine + 3 memory/index/optional cards."""
+    """Glanceable architecture: 5-step spine + 3 memory/index/optional cards. Native shapes only."""
     s = prs.slides.add_slide(prs.slide_layouts[6])
     _bg(s)
     _accent_rail(s)
@@ -398,7 +422,6 @@ def slide_architecture_overview(prs):
         "Each turn: past SessionState + current text → Top-10 + one ask. Catalog immutable. LLM optional / off.",
     )
 
-    # 5-step hot path
     steps = [
         ("1", "Ingest", "slots · family · audience", CYAN),
         ("2", "Retrieve", "FTS5 + dense hash", VIOLET),
@@ -408,9 +431,9 @@ def slide_architecture_overview(prs):
     ]
     for i, (n, h, b, col) in enumerate(steps):
         x = 0.45 + i * 2.55
-        _rect(s, Inches(x), Inches(1.6), Inches(2.35), Inches(1.85), CARD, corner=0.12)
-        _bar(s, Inches(x), Inches(1.6), Inches(2.35), Inches(0.08), col)
-        circ = _oval(s, Inches(x + 0.15), Inches(1.85), Inches(0.42), Inches(0.42), col)
+        _rect(s, Inches(x), Inches(1.55), Inches(2.35), Inches(1.7), CARD, corner=0.12)
+        _bar(s, Inches(x), Inches(1.55), Inches(2.35), Inches(0.08), col)
+        circ = _oval(s, Inches(x + 0.15), Inches(1.75), Inches(0.42), Inches(0.42), col)
         tf = circ.text_frame
         tf.paragraphs[0].alignment = PP_ALIGN.CENTER
         run = tf.paragraphs[0].add_run()
@@ -419,19 +442,11 @@ def slide_architecture_overview(prs):
             tf.paragraphs[0].space_before = Pt(4)
         except Exception:
             pass
-        _textbox(s, Inches(x + 0.7), Inches(1.9), Inches(1.5), Inches(0.35), [(h, 16, True, WHITE)])
-        _textbox(s, Inches(x + 0.15), Inches(2.55), Inches(2.05), Inches(0.7), [(b, 13, False, MUTED)])
+        _textbox(s, Inches(x + 0.7), Inches(1.8), Inches(1.5), Inches(0.35), [(h, 16, True, WHITE)])
+        _textbox(s, Inches(x + 0.15), Inches(2.4), Inches(2.05), Inches(0.6), [(b, 13, False, MUTED)])
         if i < len(steps) - 1:
-            arr = s.shapes.add_shape(
-                MSO_SHAPE.RIGHT_ARROW,
-                Inches(x + 2.38),
-                Inches(2.35),
-                Inches(0.16),
-                Inches(0.22),
-            )
-            _shape_fill(arr, MUTED2)
+            _arrow_right(s, Inches(x + 2.38), Inches(2.25), Inches(0.16), Inches(0.22), MUTED2)
 
-    # bottom three panels
     panels = [
         (
             0.45,
@@ -468,95 +483,247 @@ def slide_architecture_overview(prs):
         ),
     ]
     for x, title, lines, col in panels:
-        _rect(s, Inches(x), Inches(3.7), Inches(3.95), Inches(3.05), CARD, corner=0.1)
-        _bar(s, Inches(x), Inches(3.7), Inches(0.1), Inches(3.05), col)
-        _textbox(s, Inches(x + 0.25), Inches(3.9), Inches(3.5), Inches(0.4), [(title, 15, True, col)])
+        _rect(s, Inches(x), Inches(3.55), Inches(3.95), Inches(3.2), CARD, corner=0.1)
+        _bar(s, Inches(x), Inches(3.55), Inches(0.1), Inches(3.2), col)
+        _textbox(s, Inches(x + 0.25), Inches(3.75), Inches(3.5), Inches(0.4), [(title, 15, True, col)])
         body = [(ln, 14, False, WHITE) for ln in lines]
-        _textbox(s, Inches(x + 0.25), Inches(4.45), Inches(3.5), Inches(2.1), body)
+        _textbox(s, Inches(x + 0.25), Inches(4.3), Inches(3.5), Inches(2.2), body)
 
     _footer(s, 4)
 
 
 def slide_architecture_literature(prs):
-    """Classical CRS/DST/CQ/IR concepts redrawn — literature framing."""
+    """Classical CRS/DST/CQ/IR as native editable shapes — no PNG."""
     s = prs.slides.add_slide(prs.slide_layouts[6])
     _bg(s)
     _accent_rail(s)
     _section_label(s, "04  ·  Architecture in the literature")
+    _title(s, "Classical CRS stack → ShopPilot modules", size=24)
+    _subtitle(
+        s,
+        "Editable shapes (not paper screenshots)  ·  Qulac · Bayesian CRS · DST · corpus CQs · hybrid IR",
+        y=1.0,
+        size=13,
+    )
+
+    # A — classical pipeline
+    _textbox(s, Inches(0.5), Inches(1.35), Inches(6), Inches(0.28), [("A  ·  CLASSICAL CRS PIPELINE", 11, True, CYAN)])
+    pipe = [
+        ("User", "utterance", CYAN),
+        ("NLU", "intents+slots", GOOD),
+        ("DST", "belief state", VIOLET),
+        ("Policy", "ask/recommend", GOLD),
+        ("NLG/IR", "msg + items", PINK),
+    ]
+    for i, (h, b, col) in enumerate(pipe):
+        x = 0.5 + i * 2.45
+        _rect(s, Inches(x), Inches(1.7), Inches(2.2), Inches(0.95), CARD, corner=0.12, line=col)
+        _textbox(s, Inches(x + 0.1), Inches(1.85), Inches(2.0), Inches(0.35), [(h, 14, True, WHITE)], align=PP_ALIGN.CENTER)
+        _textbox(s, Inches(x + 0.1), Inches(2.25), Inches(2.0), Inches(0.3), [(b, 11, False, MUTED)], align=PP_ALIGN.CENTER)
+        if i < len(pipe) - 1:
+            _arrow_right(s, Inches(x + 2.22), Inches(2.05), Inches(0.2), Inches(0.22), MUTED2)
+
+    # B — DST
+    _textbox(s, Inches(0.5), Inches(2.85), Inches(12), Inches(0.28), [("B  ·  DIALOG STATE TRACKING", 11, True, VIOLET)])
+    for i, (h, b, col) in enumerate(
+        [
+            ("Utterance t", "text", CYAN),
+            ("State update", "slots · sources · wipe", GOOD),
+            ("SessionState", "soft|disclosed|override", VIOLET),
+        ]
+    ):
+        x = 0.5 + i * 4.2
+        _rect(s, Inches(x), Inches(3.2), Inches(3.9), Inches(0.85), CARD, corner=0.1, line=col)
+        _textbox(s, Inches(x + 0.15), Inches(3.3), Inches(3.6), Inches(0.3), [(h, 14, True, WHITE)])
+        _textbox(s, Inches(x + 0.15), Inches(3.65), Inches(3.6), Inches(0.3), [(b, 12, False, MUTED)])
+        if i < 2:
+            _arrow_right(s, Inches(x + 3.95), Inches(3.5), Inches(0.2), Inches(0.2), MUTED2)
+
+    # C — CQ theory vs ship
+    _textbox(s, Inches(0.5), Inches(4.25), Inches(12), Inches(0.28), [("C  ·  CLARIFYING QUESTIONS", 11, True, GOLD)])
+    _rect(s, Inches(0.5), Inches(4.55), Inches(6.0), Inches(2.15), CARD, corner=0.1, line=PINK)
+    _textbox(s, Inches(0.7), Inches(4.7), Inches(5.6), Inches(0.3), [("Theory (ablated)", 14, True, PINK)])
     _textbox(
         s,
-        Inches(0.55),
-        Inches(0.48),
-        Inches(12),
-        Inches(0.35),
-        [("Classical CRS stack → ShopPilot modules", 22, True, WHITE)],
+        Inches(0.7),
+        Inches(5.1),
+        Inches(5.6),
+        Inches(1.4),
+        [
+            ("max E[IG] / min H(posterior)", 13, False, WHITE),
+            ("Bayesian CRS · pool entropy", 12, False, MUTED),
+            ("brand/store splits look high-IG", 12, False, MUTED),
+            ("on THIS kit → Tech ~0.72  REJECT", 13, True, PINK),
+        ],
     )
+    _rect(s, Inches(6.8), Inches(4.55), Inches(6.0), Inches(2.15), CARD, corner=0.1, line=GOOD)
+    _textbox(s, Inches(7.0), Inches(4.7), Inches(5.6), Inches(0.3), [("ShopPilot ship path", 14, True, GOOD)])
     _textbox(
         s,
-        Inches(0.55),
-        Inches(0.82),
-        Inches(12),
-        Inches(0.3),
-        [("Redrawn concepts — not paper screenshots  ·  Qulac · Bayesian CRS · DST · corpus CQs · hybrid IR", 12, False, MUTED)],
+        Inches(7.0),
+        Inches(5.1),
+        Inches(5.6),
+        Inches(1.4),
+        [
+            ("other-first + static ladder", 13, False, WHITE),
+            ("skip filled / dont_care", 12, False, MUTED),
+            ("corpus facets in MESSAGE only", 12, False, MUTED),
+            ("protocol-aligned CQ · Tech ~0.91", 13, True, GOOD),
+        ],
     )
-    if not LIT_PNG.exists():
-        _rect(s, Inches(0.35), Inches(1.2), Inches(12.6), Inches(5.7), CARD, corner=0.08)
-        _textbox(
-            s,
-            Inches(0.8),
-            Inches(3.5),
-            Inches(11.5),
-            Inches(1.0),
-            [("Missing architecture_literature.png — run scripts/render_architecture_literature.py", 16, False, PINK)],
-            align=PP_ALIGN.CENTER,
-        )
-    else:
-        s.shapes.add_picture(
-            str(LIT_PNG),
-            Inches(0.22),
-            Inches(1.15),
-            width=Inches(12.9),
-            height=Inches(5.85),
-        )
     _footer(s, 5)
 
 
 def slide_architecture_diagram(prs):
-    """Full comprehensive diagram — nearly full-bleed (diagram has its own header)."""
+    """Full system architecture as native editable shapes (Canva-friendly). No PNG."""
     s = prs.slides.add_slide(prs.slide_layouts[6])
     _bg(s)
-    # thin top chrome only — avoid double titles with the PNG header
     _accent_rail(s)
     _section_label(s, "05  ·  Architecture detail")
-    _textbox(
+    _title(s, "End-to-end system diagram", size=24)
+    _subtitle(
         s,
-        Inches(0.55),
-        Inches(0.48),
-        Inches(12),
-        Inches(0.35),
-        [("End-to-end system diagram", 22, True, WHITE)],
+        "Native PowerPoint shapes — fully editable in Canva / Keynote / PPT  ·  Tech 0.909 · Hit 0.975 · 0 tokens",
+        y=1.0,
+        size=12,
     )
 
-    if not ARCH_PNG.exists():
-        _rect(s, Inches(0.35), Inches(1.0), Inches(12.6), Inches(5.9), CARD, corner=0.08)
-        _textbox(
-            s,
-            Inches(0.8),
-            Inches(3.5),
-            Inches(11.5),
-            Inches(1.0),
-            [("Missing architecture_diagram.png — run scripts/render_architecture_png.py", 16, False, PINK)],
-            align=PP_ALIGN.CENTER,
-        )
-    else:
-        # nearly full content area
-        s.shapes.add_picture(
-            str(ARCH_PNG),
-            Inches(0.22),
-            Inches(0.95),
-            width=Inches(12.9),
-            height=Inches(6.15),
-        )
+    # ENTRY
+    _textbox(s, Inches(0.35), Inches(1.35), Inches(1.6), Inches(0.25), [("ENTRY", 10, True, CYAN)])
+    _rect(s, Inches(0.35), Inches(1.6), Inches(1.7), Inches(1.55), CARD2, corner=0.1, line=CYAN)
+    _textbox(s, Inches(0.45), Inches(1.75), Inches(1.5), Inches(0.55), [("CLI / Eval", 12, True, WHITE), ("reset · respond", 10, False, MUTED)], align=PP_ALIGN.CENTER)
+    _textbox(s, Inches(0.45), Inches(2.4), Inches(1.5), Inches(0.55), [("User turn t", 12, True, WHITE), ("text + session", 10, False, MUTED)], align=PP_ALIGN.CENTER)
+
+    # HOT PATH steps
+    _textbox(s, Inches(2.25), Inches(1.35), Inches(6), Inches(0.25), [("HOT PATH  ·  Agent.respond (sync)", 10, True, GOOD)])
+    steps = [
+        ("1", "Ingest", "slots · family", CYAN),
+        ("2", "Retrieve", "FTS5 + dense", VIOLET),
+        ("3", "Rank", "coverage", GOOD),
+        ("4", "Ask", "other-first", GOLD),
+        ("5", "Respond", "Top-10 + ask", PINK),
+    ]
+    step_w = 1.85
+    for i, (n, h, b, col) in enumerate(steps):
+        x = 2.25 + i * (step_w + 0.22)
+        _rect(s, Inches(x), Inches(1.65), Inches(step_w), Inches(1.35), CARD, corner=0.1, line=col)
+        circ = _oval(s, Inches(x + 0.12), Inches(1.85), Inches(0.36), Inches(0.36), col)
+        tf = circ.text_frame
+        tf.paragraphs[0].alignment = PP_ALIGN.CENTER
+        run = tf.paragraphs[0].add_run()
+        _set_run(run, n, size=12, bold=True, color=BG)
+        try:
+            tf.paragraphs[0].space_before = Pt(3)
+        except Exception:
+            pass
+        _textbox(s, Inches(x + 0.55), Inches(1.88), Inches(1.2), Inches(0.3), [(h, 13, True, WHITE)])
+        _textbox(s, Inches(x + 0.12), Inches(2.4), Inches(step_w - 0.2), Inches(0.4), [(b, 11, False, MUTED)])
+        if i < len(steps) - 1:
+            _arrow_right(s, Inches(x + step_w + 0.02), Inches(2.2), Inches(0.18), Inches(0.2), MUTED2)
+
+    # entry → ingest
+    _arrow_right(s, Inches(2.05), Inches(2.2), Inches(0.18), Inches(0.2), CYAN)
+
+    # client chip
+    _rect(s, Inches(12.0), Inches(1.95), Inches(1.05), Inches(0.7), CARD2, corner=0.15, line=PINK)
+    _textbox(s, Inches(12.0), Inches(2.1), Inches(1.05), Inches(0.45), [("→ client", 11, True, WHITE)], align=PP_ALIGN.CENTER)
+    _arrow_right(s, Inches(11.75), Inches(2.2), Inches(0.2), Inches(0.2), PINK)
+
+    # write / read arrows (vertical)
+    _arrow_down(s, Inches(2.95), Inches(3.05), Inches(0.2), Inches(0.35), GOOD)
+    _textbox(s, Inches(3.2), Inches(3.1), Inches(0.6), Inches(0.25), [("write", 10, True, GOOD)])
+    _arrow_up(s, Inches(4.9), Inches(3.05), Inches(0.2), Inches(0.35), GOOD)
+    _textbox(s, Inches(5.15), Inches(3.1), Inches(0.55), Inches(0.25), [("read", 10, True, GOOD)])
+
+    # BOTTOM PANELS
+    # SessionState
+    _rect(s, Inches(0.35), Inches(3.5), Inches(5.9), Inches(3.2), CARD, corner=0.1, line=GOOD)
+    _bar(s, Inches(0.35), Inches(3.5), Inches(0.1), Inches(3.2), GOOD)
+    _textbox(s, Inches(0.6), Inches(3.65), Inches(5.4), Inches(0.35), [("SessionState  ·  mutable RAM", 16, True, GOOD)])
+    _textbox(
+        s,
+        Inches(0.6),
+        Inches(4.1),
+        Inches(5.4),
+        Inches(1.8),
+        [
+            ("Slots   soft | disclosed | override · filled / asked", 13, False, WHITE),
+            ("Route   product_family · gift audience · buy/browse", 13, False, WHITE),
+            ("Clean   soft-only wipe · never re-ask filled", 13, False, WHITE),
+            ("Loop    next turn = past state + current text", 13, False, WHITE),
+        ],
+    )
+    _rect(s, Inches(0.6), Inches(5.95), Inches(5.4), Inches(0.55), CARD2, corner=0.1, line=CYAN)
+    _textbox(
+        s,
+        Inches(0.7),
+        Inches(6.05),
+        Inches(5.2),
+        Inches(0.4),
+        [('INVARIANT  t3 "black" ranks with dress+plus+black', 11, True, WHITE)],
+        align=PP_ALIGN.CENTER,
+    )
+
+    # Catalog
+    _rect(s, Inches(6.45), Inches(3.5), Inches(3.3), Inches(3.2), CARD, corner=0.1, line=VIOLET)
+    _bar(s, Inches(6.45), Inches(3.5), Inches(0.1), Inches(3.2), VIOLET)
+    _textbox(s, Inches(6.7), Inches(3.65), Inches(2.9), Inches(0.35), [("Catalog  ·  immutable", 15, True, VIOLET)])
+    _textbox(
+        s,
+        Inches(6.7),
+        Inches(4.15),
+        Inches(2.9),
+        Inches(2.3),
+        [
+            ("FTS5 BM25 in-memory", 13, False, WHITE),
+            ("Dense hash 512-d default", 13, False, WHITE),
+            ("MiniLM opt-in only", 13, False, WHITE),
+            ("_products · 50k CSJ", 13, False, WHITE),
+            ("no writes at turn time", 13, False, MUTED),
+        ],
+    )
+
+    # Optional + Measure
+    _rect(s, Inches(9.95), Inches(3.5), Inches(3.05), Inches(1.7), CARD, corner=0.1, line=PINK)
+    _bar(s, Inches(9.95), Inches(3.5), Inches(0.1), Inches(1.7), PINK)
+    _textbox(s, Inches(10.2), Inches(3.6), Inches(2.65), Inches(0.3), [("Optional LLM", 14, True, PINK)])
+    _textbox(
+        s,
+        Inches(10.2),
+        Inches(3.95),
+        Inches(2.65),
+        Inches(1.1),
+        [
+            ("OFF · not on score path", 12, False, MUTED),
+            ("slots NLU · rerank top-20", 12, False, WHITE),
+            ("timeout → rules", 12, False, WHITE),
+        ],
+    )
+    _rect(s, Inches(9.95), Inches(5.4), Inches(3.05), Inches(1.3), CARD2, corner=0.1, line=MUTED2)
+    _textbox(s, Inches(10.2), Inches(5.55), Inches(2.65), Inches(0.3), [("Measure", 14, True, WHITE)])
+    _textbox(
+        s,
+        Inches(10.2),
+        Inches(5.9),
+        Inches(2.65),
+        Inches(0.7),
+        [
+            ("Hit · MRR · MTTC → Tech", 12, False, MUTED),
+            ("public 200 · guardrail", 12, False, GOLD),
+        ],
+    )
+
+    # next-turn callout (no long spaghetti arrow — Canva-editable bar)
+    _rect(s, Inches(0.35), Inches(6.8), Inches(12.65), Inches(0.32), CARD2, corner=0.15, line=CYAN)
+    _textbox(
+        s,
+        Inches(0.35),
+        Inches(6.82),
+        Inches(12.65),
+        Inches(0.28),
+        [("next turn ↺  same session_id   ·   state write/read   ·   catalog index read-only   ·   LLM off score path", 11, True, CYAN)],
+        align=PP_ALIGN.CENTER,
+    )
     _footer(s, 6)
 
 
@@ -799,9 +966,26 @@ def main() -> None:
         print(f"WROTE {dl}")
     except Exception as e:
         print(f"Downloads copy skipped: {e}")
+
+    # Standalone Canva-editable architecture pack (native shapes only, no PNG)
+    arch = Presentation()
+    arch.slide_width = W
+    arch.slide_height = H
+    slide_architecture_overview(arch)
+    slide_architecture_literature(arch)
+    slide_architecture_diagram(arch)
+    arch_out = ROOT / "docs" / "ShopPilot_Architecture_Editable.pptx"
+    arch.save(str(arch_out))
+    arch_dl = Path.home() / "Downloads" / "ShopPilot_Architecture_Editable.pptx"
+    try:
+        arch.save(str(arch_dl))
+        print(f"WROTE {arch_dl}")
+    except Exception as e:
+        print(f"Architecture Downloads copy skipped: {e}")
+    print(f"WROTE {arch_out}")
+
     print(f"WROTE {OUT}")
-    print(f"slides={len(prs.slides)}")
-    print(f"arch={ARCH_PNG.exists()} lit={LIT_PNG.exists()}")
+    print(f"slides={len(prs.slides)} arch_pack={len(arch.slides)}")
     print(f"metrics tech={OURS['tech']} hit={OURS['hit']} mrr={OURS['mrr']} mttc={OURS['mttc']}")
 
 

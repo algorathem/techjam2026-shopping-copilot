@@ -1,7 +1,39 @@
-"""Stateful shopping agent for the TechJam conversational-search kit.
+"""ShopPilot agent — multi-turn conversational retrieval for TechJam Track 4.
 
-Pipeline: slot parse → query rephrase → hybrid FTS5 retrieve → lexical rerank
-→ optional LLM semantic rerank (SpaceXAI / xAI, off unless SHOPPILOT_LLM=1).
+Architecture
+------------
+Official interface: ``Agent.reset`` / ``Agent.respond`` →
+``{message, ask_attribute, recommendations, usage}``.
+
+Per turn (deterministic default path, no required network)::
+
+    user_message
+        → ingest into SessionState   (slots, family, audience, override)
+        → optional LLM slot parse    (env-gated, fail-open, default OFF)
+        → hybrid retrieve            (FTS5 ∪ dense hash/MiniLM)
+        → score / rank               (evidence coverage×exact + priors)
+        → emit Top-K                 (confidence margin policy)
+        → choose one ask_attribute   (other-first ladder)
+        → compose message
+
+SessionState is compact DST: constraints carry provenance
+``soft | disclosed | override``. Intent override wipes soft prefs only,
+keeps simulator-disclosed facts, blocks discarded tokens from FTS, and
+re-opens ``other``.
+
+Policy (public-set measured defaults)
+-------------------------------------
+* Ask: ``other`` first (simulator catch-all, ≤2 hidden facts); optional
+  second ``other`` while thin; then static ``ASK_ORDER``. Max-IG rejected.
+* Emit: score-margin gate — Top-1 while uncertain, Top-10 when
+  ``score(top1)-score(top2) ≥ PRECISION_GAP`` (or turn ≥ force widen).
+  First appearance of the target ASIN freezes Hit/MRR/MTTC, so early fat
+  lists can lock weak ranks.
+* Rank: per-constraint token coverage + exact phrase match, category-tail
+  bonus, product-family / audience adapters, full-match jackpot, weak
+  profile/rating priors. Offline hash dense supplements FTS; LLM optional.
+
+Env knobs are documented in README. Default scored path needs no API key.
 """
 from __future__ import annotations
 
@@ -47,13 +79,19 @@ COLORS = (
     "purple", "yellow", "orange", "navy", "beige", "gold", "silver", "ivory",
     "khaki",
 )
+# ---------------------------------------------------------------------------
+# Clarification policy
+# ---------------------------------------------------------------------------
+# Official protocol: at most one ask_attribute ∈ ALLOWED_ATTRIBUTES | null.
+# Simulator reveals hidden intent-card facts only when ask_attribute is set;
+# message prose is ignored for scoring and for the next user utterance.
+#
+# ASK_ORDER is the post-other ladder. Brand/category stay low priority:
+# high lexical entropy, weak match to the simulator's constraint classifier.
 ASK_ORDER = (
     "color", "material", "style", "brand", "feature", "use_case", "size",
     "budget", "category", "other",
 )
-# Pool-split scoring prefers these first when info-gain ties.
-# Brand/category often have high entropy but rarely match the simulator's
-# hidden constraint classifier, so they stay low priority.
 ASK_PRIORITY = {
     "other": 100.0,
     "color": 9.0,
@@ -66,7 +104,7 @@ ASK_PRIORITY = {
     "brand": 2.0,
     "category": 1.0,
 }
-# Only these may be reordered by pool-split; brand/category/feature stay static.
+# Attributes eligible for optional pool-split reorder experiments (default off).
 POOL_ELIGIBLE = frozenset({
     "color", "material", "use_case", "style", "size", "budget",
 })
@@ -80,64 +118,58 @@ USE_CASE_TOKENS = (
     "hiking", "running", "gym", "winter", "summer", "outdoor", "work",
     "walking", "travel", "sport", "training", "beach", "rain", "snow",
 )
-# Dense hybrid lane weights (cosine ~[-1,1]). Tuned on public 200.
-# hash w=4.5 → Tech≈0.788; minilm w=10 → Tech≈0.792 (explicit opt-in).
+# ---------------------------------------------------------------------------
+# Retrieval / rank weights (architecture constants; env can override behavior)
+# ---------------------------------------------------------------------------
+# Dense hybrid lane: cosine-like scores fused into lexical rank.
 DENSE_WEIGHT_BY_BACKEND = {
     "none": 0.0,
     "hash": 4.5,
     "minilm": 10.0,
 }
-DENSE_SCORE_WEIGHT = 4.5  # default/fallback when backend unknown
+DENSE_SCORE_WEIGHT = 4.5
 DENSE_RECALL_K = 80
 INFO_GAIN_TOP_N = 40
-# Peer-inspired (Unknownflow): first N turns emit Top-1 only so a premature
-# Top-10 hit doesn't lock a mediocre MRR (session ends at first hit).
-# Set SHOPPILOT_PRECISION_TURNS=0 to disable.
-# Fixed Top-1 window only when margin gate is off (PRECISION_GAP=0).
-# With default gap>0, emission is margin-driven (see _emit_top_k).
+
+# Emission policy: first hit freezes MRR, so uncertain turns emit Top-1.
+# PRECISION_GAP>0 → margin mode (default). PRECISION_TURNS used only if gap=0.
 PRECISION_TURNS_DEFAULT = 0
-# Stay Top-1 until this many constraints even after precision turns (cap below).
-# 0 = disabled (fixed turn window only) — safer for MTTC on public set.
 PRECISION_MIN_CONS_DEFAULT = 0
 PRECISION_MAX_TURN_DEFAULT = 5
-# Strong bonus when session category terms ⊆ product category-tail terms.
+PRECISION_GAP_DEFAULT = 10.0  # Top-10 when score(top1)-score(top2) ≥ this
+
+# Category path specificity (leaf/tail match in catalog categories).
 CATEGORY_TAIL_EXACT_BONUS = 10.0
 CATEGORY_TAIL_PARTIAL_BONUS = 2.5
-# Super-linear bonus when 2+ disclosed/session phrases exact-match product text.
+
+# Multi-phrase exact combo (legacy experimental; env SHOPPILOT_EXACT_COMBO).
 COMBO_EXACT_BASE = 3.0
 COMBO_EXACT_STEP = 2.5
-# Peer-style per-constraint coverage/exact (Unknownflow). Dominant MRR lever.
+
+# Evidence rank: per-constraint coverage + exact phrase match.
+# score += weight * (coverage*W_c + exact*W_e + |matched|*W_m)
 EVIDENCE_COVERAGE_W = 12.0
 EVIDENCE_EXACT_W = 14.0
 EVIDENCE_MATCH_W = 0.35
 EVIDENCE_INDEX_STEP = 0.18
-# Disclosed/override can outweigh soft (default 1.0 = flat; 2.0 hurt MRR on public).
 EVIDENCE_DISCLOSED_MULT = 1.0
 EVIDENCE_SOFT_MULT = 1.0
-# Title pin (default off — public A/B dropped Tech ~0.006).
 EVIDENCE_TITLE_EXACT = 6.0
 EVIDENCE_TITLE_COVERAGE = 2.0
-# Experimental MRR policies (default off unless noted; A/B via env).
-# Keep Top-1 while score(top1)-score(top2) < gap.
-# Public A/B: gap=10 with FORCE_TOP10_TURN=4 → Tech 0.9081 → 0.9091 (MRR +0.012).
-# 0 disables margin mode and uses fixed PRECISION_TURNS only.
-PRECISION_GAP_DEFAULT = 10.0
-# Soft demote when a disclosed multi-token phrase is fully absent (0 = off).
-SOFT_MISS_PENALTY_DEFAULT = 0.0
-# Bonus when product fully covers all multi-token disclosed constraints.
-# Public A/B: 8.0 → Tech 0.907753 → 0.908104 (MRR +0.001); keep on.
+
+# Full-match jackpot when all multi-token disclosed constraints hit product text.
 FULL_MATCH_BONUS_DEFAULT = 8.0
-# Allow a third `other` if still almost empty (0/1).
+SOFT_MISS_PENALTY_DEFAULT = 0.0
+
+# Ask schedule extras
 OTHER_THRICE_DEFAULT = 0
-# Stop asking from this turn onward when evidence is rich (9 = legacy).
 STOP_ASK_TURN_DEFAULT = 9
-# Min constraints to consider "rich" for early stop-ask.
 STOP_ASK_MIN_CONS_DEFAULT = 3
-# Clarifying-question policy (public-set A/B):
-#   other-first + static ASK_ORDER  → Tech 0.753 baseline stack
-#   pure max pool info-gain         → Tech 0.720  (REJECT)
-#   coverage-gated pool swap        → Tech 0.752  (≈flat, skip)
-# Keep static order. Facet stats remain for message grounding only.
+
+# Clarification A/B summary (kept for policy archaeology):
+#   other-first + static ASK_ORDER  → kept (score path)
+#   pure max pool info-gain         → rejected (large Tech drop)
+#   coverage-gated pool swap        → ≈flat, not default
 DEFAULT_COVERAGE_MAX = 0.35
 ALT_GAIN_MIN = 0.45
 LOOKING_RE = re.compile(
@@ -661,6 +693,17 @@ def _split_constraints(blob: str) -> list[str]:
 
 @dataclass
 class SessionState:
+    """Compact dialog state for one evaluation session.
+
+    Provenance on each constraint:
+      soft       — inferred from free text / opening fluff
+      disclosed  — simulator dump ("what matters is: …") or key requirement
+      override   — post mind-change ("actually… need is: …")
+
+    Override policy keeps disclosed/override facts, drops soft, blocks
+    discarded tokens in FTS, and advances query_message_start so pre-pivot
+    chat does not poison retrieval.
+    """
     profile: dict
     category: str = ""
     product_family: str | None = None
@@ -784,7 +827,11 @@ class SessionState:
 
 
 class Agent:
-    """Hybrid BM25 + constraint rerank with a clarification state machine."""
+    """Official TechJam shopping agent entrypoint.
+
+    Builds an in-memory FTS5 index over the frozen catalog at init, optional
+    dense vectors, and serves multi-turn ``respond`` under the kit contract.
+    """
 
     def __init__(self, catalog_path: str | Path = "data/catalog.jsonl") -> None:
         self.catalog_path = Path(catalog_path)
@@ -894,12 +941,18 @@ class Agent:
         top_k: int,
         ranked: list[tuple[str, float]] | None = None,
     ) -> int:
-        """Two-stage emission: Top-1 under uncertainty, Top-10 under conviction.
+        """Recommendation-list width policy (MRR vs Hit/MTTC tradeoff).
 
-        Default (PRECISION_GAP=0): fixed Top-1 for turns 1..N (ship path).
-        With SHOPPILOT_PRECISION_GAP>0: margin gate can widen early if
-        score(top1)-score(top2) is large, or force Top-1 while margin is small
-        (even after the fixed window), until turn cap.
+        Kit rule: the first turn the true ASIN appears in ``recommendations``
+        freezes rank (MRR) and turn (MTTC). Emitting Top-10 while scores are
+        flat can lock a mediocre rank; emitting Top-1 while uncertain defers
+        the cash-in until the notebook is sharper.
+
+        Default (PRECISION_GAP>0): margin gate.
+          - turn ≥ FORCE_TOP10_TURN → full Top-K
+          - score(top1)-score(top2) ≥ gap → full Top-K (even early)
+          - else → Top-1
+        Fallback (gap=0): fixed Top-1 for PRECISION_TURNS early turns.
         """
         n = self._precision_turns()
         try:
@@ -1458,11 +1511,9 @@ class Agent:
     ) -> float:
         text = product["text"]
         title = product["title"].lower()
-        # sqlite bm25: more negative is better
+        # sqlite bm25: more negative is better → negate for descending sort
         score = -bm25
-        # Primary evidence ranker (peer-style): per-constraint coverage + exact
-        # phrase match with position weights. Replaces flat +4.5 phrase loops
-        # as the main MRR driver when SHOPPILOT_EVIDENCE_RANK=1 (default).
+        # Constraint checklist rank (dominant MRR feature when enabled).
         if os.environ.get("SHOPPILOT_EVIDENCE_RANK", "1") != "0":
             score += self._evidence_rank_score(product, state, phrases)
         else:
@@ -1485,11 +1536,9 @@ class Agent:
         for token in _terms(state.category):
             if token in " ".join(c.lower() for c in product["categories"]):
                 score += 0.8
-        # Category-tail exactness (peer Unknownflow-style). Strong boost when
-        # shopper category terms sit in the most specific path segment(s).
+        # Category path specificity (leaf/tail of catalog categories).
         score += self._category_tail_bonus(product, state)
-        # Product-family intent: boost true category path, penalize conflicts
-        # ("dress" garment vs "dress sandals" footwear).
+        # Product-family adapter: separates lexical traps (e.g. dress vs dress sandals).
         if state.product_family:
             match = product_family_match(product, state.product_family)
             if match == "hit":
@@ -1577,7 +1626,17 @@ class Agent:
         state: SessionState,
         phrases: list[str],
     ) -> float:
-        """Per-constraint coverage + exact match; disclosed weighted higher; title pin."""
+        """Primary ranking feature: checklist match of session constraints.
+
+        For each constraint (and optional category unit):
+          coverage = |query tokens ∩ doc tokens| / |query|
+          exact    = 1 if normalized phrase ∈ product text (or canonical tail)
+          weight   = (1 + index * step) * source_multiplier
+
+        Additive fusion with BM25 and dense cosine in ``_score``. This is
+        linear in features, not a trained cross-encoder; optional LLM rerank
+        sits downstream and is off by default.
+        """
         if os.environ.get("SHOPPILOT_EVIDENCE_RANK", "1") == "0":
             return 0.0
         full = (product.get("text") or "").lower()

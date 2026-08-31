@@ -1,12 +1,14 @@
-"""In-memory dense retrieval backends for ShopPilot.
+"""Dense retrieval backends for ShopPilot (optional second recall lane).
 
-Default offline path needs no third-party packages. When NumPy is importable,
-a hashed character n-gram encoder provides a second recall/rerank lane that
-bridges some lexical paraphrase gaps FTS5 misses.
+Architecture
+------------
+Default offline path uses a feature-hashed character n-gram encoder when
+NumPy is available (no third-party ML deps). Vectors live in memory / cache
+under ``data/``. MiniLM (sentence-transformers) is explicit opt-in via
+``SHOPPILOT_DENSE=minilm`` and is not required for the scored default path.
 
-Optional MiniLM backend (sentence-transformers) activates only when
-SHOPPILOT_DENSE=minilm and the package is installed. Embeddings are cached
-under data/ so subsequent runs stay fast.
+Dense scores are fused additively into the lexical evidence ranker in
+``starter.agent.Agent._retrieve``; they do not replace FTS5.
 """
 from __future__ import annotations
 

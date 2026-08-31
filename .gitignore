@@ -2,25 +2,34 @@ __pycache__/
 *.py[cod]
 .DS_Store
 .env
+.env.*
 results.json
+results_*.json
+
 data/catalog.jsonl
 data/catalog.jsonl.gz
 data/dense_*.npz
 data/releases/
-# Organizer-only code, private evaluation data, manifests, and build reports.
+
+# Organizer-only / private
 organizer/
 secure/
-# Internal provenance and release-audit working documents.
 docs/audits/
 docs/data_selection_audit.md
 docs/participant_release_checklist.md
-# Organizer-only pipeline tests.
 tests/test_5core_builder.py
 tests/test_organizer_pipeline.py
-*.log
 
-# demo AV intermediates (final mp4 is tracked)
-docs/demo_video_audio/
-docs/demo_video_frames/clips/
-docs/ShopPilot_Demo_Voiceover.wav
-docs/archive_add_slides_raw.pdf
+*.log
+research/
+
+# Local experiment dumps (do not ship)
+docs/battery_runs/
+docs/*_report.*
+docs/state_viz.*
+docs/demo_video_*/
+docs/ShopPilot_Demo_*
+docs/archive_*
+
+# Pitch deck: re-add intentionally when ready (uncomment to ignore while drafting)
+# docs/ShopPilot_Pitch_Deck.pdf

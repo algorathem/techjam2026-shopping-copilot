@@ -19,7 +19,7 @@ Official weak BM25 starter vs this agent (`python -m evaluator.local_evaluator`)
 | Efficiency | 0.119 | **0.800** |
 | TechnicalScore | 0.107 | **0.909** |
 
-Default path is offline **hash** dense + rules (or `none` without NumPy). MiniLM remains opt-in (`SHOPPILOT_DENSE=minilm`). Score stack: **precision Top-1 turns**, **category-tail**, **second `other`**, and peer-style **per-constraint evidence rank** (coverage×exact).
+Default path is offline **hash** dense + rules (or `none` without NumPy). MiniLM is opt-in (`SHOPPILOT_DENSE=minilm`). Score stack: **margin-gated Top-K emission**, **other-first (+ optional second other)**, **category-tail**, **per-constraint evidence rank** (coverage×exact), **full-match jackpot**.
 
 TechnicalScore = `0.50×Hit@10 + 0.30×MRR + 0.20×clip((11−MTTC)/10, 0, 1)`.
 
@@ -37,15 +37,14 @@ Token usage: **0** on lexical/dense paths.
 Env knobs (defaults are the scored path):
 
 ```bash
-export SHOPPILOT_PRECISION_GAP=10     # 0 = fixed turn window instead
+export SHOPPILOT_PRECISION_GAP=10     # confidence margin; 0 = fixed turn window
 export SHOPPILOT_PRECISION_TURNS=0    # used only when gap=0
 export SHOPPILOT_FORCE_TOP10_TURN=4   # always full slate from this turn
 export SHOPPILOT_OTHER_TWICE=1
 export SHOPPILOT_CATEGORY_TAIL=1
 export SHOPPILOT_EVIDENCE_RANK=1
+export SHOPPILOT_FULL_MATCH=8         # 0 disables full-match jackpot
 ```
-
-Policy battery (`scripts/run_policy_battery.py`): full-match jackpot (+tiny MRR) kept; score-gap Top-1 / soft-miss / other×3 did not beat floor — see `docs/policy_battery_results.md`.
 
 
 ## How it addresses the four pillars

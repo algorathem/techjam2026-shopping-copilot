@@ -46,6 +46,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from starter.dense import DenseIndex, query_text_from_state
+from starter.signatures import SignatureIndex, signature_bonus, signatures_enabled
 from starter.llm_rerank import llm_enabled, rerank as llm_rerank
 from starter.llm_slots import (
     apply_slot_parse,
@@ -839,7 +840,9 @@ class Agent:
         self.connection = sqlite3.connect(":memory:")
         self._sessions: dict[str, SessionState] = {}
         self._products: dict[str, dict] = {}
+        self._sigs = SignatureIndex()
         self._build_index()
+        self._sigs.freeze()
         # Optional second lane. Stdlib-only judges get DenseIndex(backend=none).
         self._dense = DenseIndex.build(
             self._products,
@@ -872,6 +875,8 @@ class Agent:
                 except (TypeError, ValueError):
                     price_value = None
                 facets = self._extract_facets(blob, store, price_value, title)
+                if signatures_enabled():
+                    self._sigs.add(asin, product)
                 self._products[asin] = {
                     "parent_asin": asin,
                     "title": title,
@@ -1198,6 +1203,11 @@ class Agent:
             for item in items:
                 if item:
                     state.add_constraint(item, source=source)
+            # Keep the unsplit kit sentence so exact catalog signatures still hit
+            # after `_split_constraints` breaks on ';' (common in CSJ features).
+            whole = re.sub(r"\s+", " ", raw).strip(" -;,.\t\n")[:180]
+            if len(whole) >= 24:
+                state.add_constraint(whole, source=source)
             return
         # Generic follow-up that is not the "ask me something" stall line.
         if re.search(r"not quite right yet", text, re.I):
@@ -1437,6 +1447,28 @@ class Agent:
             elif rank < bm25_map[asin]:
                 bm25_map[asin] = rank
 
+        # Exact catalog-signature lane (simulator-quoted features/details).
+        sig_hit: dict[str, object] = {
+            "asins": [],
+            "n_rare": {},
+            "df_min": {},
+            "intersect": set(),
+        }
+        if signatures_enabled() and state.constraints:
+            disclosed = [
+                phrase
+                for i, phrase in enumerate(state.constraints)
+                if (state.constraint_sources[i] if i < len(state.constraint_sources) else "soft")
+                in {"disclosed", "override"}
+            ]
+            pool = disclosed or list(state.constraints)
+            sig_hit = self._sigs.match(pool)
+            for asin in sig_hit.get("asins") or []:  # type: ignore[union-attr]
+                asin = str(asin)
+                if asin not in bm25_map:
+                    asins.append(asin)
+                    bm25_map[asin] = 0.0
+
         # Dense recall lane: bring in paraphrase / near-duplicate candidates FTS missed.
         tags = [str(tag) for tag in (state.profile.get("preference_tags") or [])]
         dense_query = query_text_from_state(
@@ -1470,6 +1502,8 @@ class Agent:
             if not product:
                 continue
             base = self._score(product, phrases, tag_l, bm25_map.get(asin, 0.0), state)
+            if signatures_enabled():
+                base += signature_bonus(asin, sig_hit)
             dense = dense_map.get(asin)
             if dense is not None:
                 weight = DENSE_WEIGHT_BY_BACKEND.get(

@@ -1,5 +1,10 @@
 # ShopPilot
 
+> **Branch `experiment/signatures` (not the Devpost/`main` submission).**
+> Exact catalog feature/detail matching, on by default here.
+> `SHOPPILOT_SIGNATURES=0` restores `main` behavior. Do not merge to `main`.
+
+
 Multi-turn shopping agent for TechJam Track 4 (Shopping Copilot). Finds a hidden catalog purchase in ≤10 turns via structured clarification and hybrid retrieval.
 
 Built on the [official conversational-search kit](https://github.com/TechJam2026/techjam-conversational-search). Default path is **offline** (stdlib + optional NumPy hash dense). No required LLM, GPU, or vector DB.
@@ -91,6 +96,8 @@ python scripts/eval_subset.py --limit 24      # fast A/B vs hash
 
 ```bash
 export SHOPPILOT_DENSE=hash
+export SHOPPILOT_SIGNATURES=1          # this branch only; 0 = off
+export SHOPPILOT_SIG_DF=40             # max df for a "rare" signature
 export SHOPPILOT_PRECISION_GAP=10      # margin for Top-10; 0 → fixed turn window
 export SHOPPILOT_PRECISION_TURNS=0     # used only when gap=0
 export SHOPPILOT_FORCE_TOP10_TURN=4

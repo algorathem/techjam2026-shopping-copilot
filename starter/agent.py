@@ -279,6 +279,12 @@ def product_audience_match(product: dict, audience: str) -> str:
 # Coarse product-family intent. Token "dress" alone matches footwear
 # ("dress sandals"); family routing separates garment vs shoe senses.
 FAMILY_PATTERNS: list[tuple[str, tuple[re.Pattern[str], ...]]] = [
+    # Jeans / boot-cut BEFORE footwear so "boot cut" ≠ boots.
+    ("bottom", tuple(re.compile(p, re.I) for p in (
+        r"boot[\s-]?cuts?", r"\bbootcut\b",
+        r"\bjeans?\b", r"\bpants?\b", r"\btrousers?\b", r"\bleggings?\b",
+        r"\bshorts?\b", r"\bskirts?\b",
+    ))),
     ("footwear", tuple(re.compile(p, re.I) for p in (
         r"dress\s+shoes?", r"dress\s+sandals?", r"dress\s+heels?",
         r"dress\s+boots?", r"dress\s+loafers?", r"dress\s+pumps?",
@@ -292,11 +298,12 @@ FAMILY_PATTERNS: list[tuple[str, tuple[re.Pattern[str], ...]]] = [
     ))),
     ("top", tuple(re.compile(p, re.I) for p in (
         r"\bshirts?\b", r"\bt-?shirts?\b", r"\bblouses?\b", r"\btops?\b",
-        r"\btanks?\b", r"\bsweaters?\b", r"\bhoodies?\b",
+        r"\btanks?\b", r"\bsweaters?\b", r"\bhoodies?\b", r"\btees?\b",
+        r"\bzip\s+hoodies?\b",
     ))),
-    ("bottom", tuple(re.compile(p, re.I) for p in (
-        r"\bjeans?\b", r"\bpants?\b", r"\btrousers?\b", r"\bleggings?\b",
-        r"\bshorts?\b", r"\bskirts?\b",
+    ("lounge", tuple(re.compile(p, re.I) for p in (
+        r"\brobes?\b", r"\bbathrobes?\b", r"\bhouserobes?\b", r"spa\s+robe",
+        r"\bsleepwear\b", r"\bpajamas?\b", r"\bpyjamas?\b",
     ))),
     ("outerwear", tuple(re.compile(p, re.I) for p in (
         r"\bjackets?\b", r"\bcoats?\b", r"\bblazers?\b", r"\bparkas?\b",
@@ -327,7 +334,10 @@ FAMILY_CATALOG_HINTS: dict[str, tuple[str, ...]] = {
     ),
     "bottom": (
         "jean", "jeans", "pant", "pants", "short", "shorts", "skirt", "skirts",
-        "legging", "trouser",
+        "legging", "trouser", "boot cut", "bootcut",
+    ),
+    "lounge": (
+        "robe", "robes", "bathrobe", "sleep", "lounge", "pajama", "spa robe",
     ),
     "outerwear": ("jacket", "coat", "blazer", "parka", "outerwear"),
     "bag": ("bag", "bags", "handbag", "purse", "backpack", "tote"),
@@ -342,9 +352,11 @@ FAMILY_CATALOG_HINTS: dict[str, tuple[str, ...]] = {
 # Families that should not leak into each other when intent is locked.
 FAMILY_CONFLICTS: dict[str, frozenset[str]] = {
     "dress": frozenset({"footwear"}),
-    "footwear": frozenset({"dress"}),
-    "top": frozenset({"footwear", "dress", "bottom"}),
+    "footwear": frozenset({"dress", "bottom", "lounge"}),
+    "top": frozenset({"footwear", "dress", "bottom", "lounge"}),
     "bottom": frozenset({"footwear", "dress", "top"}),
+    "lounge": frozenset({"footwear", "dress", "outerwear"}),
+    "outerwear": frozenset({"lounge", "footwear"}),
 }
 
 
@@ -1313,7 +1325,14 @@ class Agent:
 
         # Dense recall lane: bring in paraphrase / near-duplicate candidates FTS missed.
         tags = [str(tag) for tag in (state.profile.get("preference_tags") or [])]
-        dense_query = query_text_from_state(state.category, state.constraints, tags)
+        dense_query = query_text_from_state(
+            state.category,
+            state.constraints,
+            tags,
+            family=state.product_family,
+            audience=state.audience,
+            canonical=os.environ.get("SHOPPILOT_CANONICAL_QUERY", "0") == "1",
+        )
         dense_hits = self._dense.search(dense_query, top_k=DENSE_RECALL_K) if dense_query else []
         dense_map = {asin: score for asin, score in dense_hits}
         for asin, _ in dense_hits:
@@ -1557,6 +1576,16 @@ class Agent:
             ) else 0.0
 
             src_mult = disc_m if src in {"disclosed", "override"} else soft_m
+            # Recency: later constraints (refinements) weigh more.
+            n_ord = max(len(ordered), 1)
+            try:
+                recency_w = float(os.environ.get("SHOPPILOT_RECENCY", "0"))
+            except ValueError:
+                recency_w = 0.0
+            if recency_w > 0 and n_ord > 1:
+                # index 0 → ~1.0; last → 1+recency_w
+                frac = index / (n_ord - 1)
+                src_mult *= 1.0 + recency_w * frac
             weight = (1.0 + index * EVIDENCE_INDEX_STEP) * src_mult
             score += weight * (
                 coverage * EVIDENCE_COVERAGE_W

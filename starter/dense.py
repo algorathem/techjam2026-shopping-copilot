@@ -230,6 +230,44 @@ class DenseIndex:
         return out
 
 
-def query_text_from_state(category: str, constraints: Iterable[str], tags: Iterable[str]) -> str:
-    parts = [category, *list(constraints)[:8], *list(tags)[:6]]
-    return " ".join(str(p) for p in parts if p)
+def query_text_from_state(
+    category: str,
+    constraints: Iterable[str],
+    tags: Iterable[str],
+    *,
+    family: str | None = None,
+    audience: str | None = None,
+    canonical: bool = True,
+) -> str:
+    """Build dense-query text. Canonical mode mimics catalog title structure."""
+    if not canonical or os.environ.get("SHOPPILOT_CANONICAL_QUERY", "0") != "1":
+        parts = [category, *list(constraints)[:8], *list(tags)[:6]]
+        return " ".join(str(p) for p in parts if p)
+
+    # Title-like: audience family category + constraint atoms (newest last kept).
+    bits: list[str] = []
+    if audience:
+        bits.append(str(audience).replace("_", " "))
+    if family and family not in {"lounge"}:
+        bits.append(family if family != "bottom" else "jeans pants")
+    elif family == "lounge":
+        bits.append("robe bathrobe")
+    if category:
+        bits.append(str(category))
+    # Prefer shorter attribute-like constraints first (color/material), then rest.
+    cons = [str(c).strip() for c in constraints if c]
+    short = [c for c in cons if len(c) <= 24]
+    long = [c for c in cons if len(c) > 24]
+    bits.extend(short[-6:])  # recency: last short constraints
+    bits.extend(long[-2:])
+    bits.extend(str(t) for t in list(tags)[:4] if t)
+    # de-dupe preserve order
+    out: list[str] = []
+    seen: set[str] = set()
+    for b in bits:
+        key = b.lower()
+        if key in seen or not b:
+            continue
+        seen.add(key)
+        out.append(b)
+    return " ".join(out)

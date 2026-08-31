@@ -107,7 +107,7 @@ python -m unittest tests.test_agent_slots tests.test_rewrite tests.test_dense te
 export SHOPPILOT_DENSE=hash    # or none | minilm
 python -m evaluator.local_evaluator
 
-# interactive backend demo (no UI required for the track)
+# interactive demo — Astrid CLI (single brand UI)
 python cli_chat.py --dense hash
 ```
 

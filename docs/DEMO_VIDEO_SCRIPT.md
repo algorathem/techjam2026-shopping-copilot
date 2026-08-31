@@ -41,6 +41,7 @@ message → state (slots/family/override)
 ```bash
 export SHOPPILOT_DENSE=hash
 python3 cli_chat.py --dense hash
+# opens Astrid CLI (single demo brand)
 ```
 
 **Scenario A — vague → clarify (browsing)**  

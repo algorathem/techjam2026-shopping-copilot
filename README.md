@@ -13,13 +13,13 @@ Official weak BM25 starter vs this agent (`python -m evaluator.local_evaluator`)
 
 | Metric | Starter BM25 | ShopPilot (hash) | + MiniLM opt-in |
 |---|---:|---:|---:|
-| Hit Rate@10 | 0.125 | 0.930 | 0.925 |
-| MRR | 0.068 | 0.553 | 0.574 |
-| MTTC | 9.81 | 3.08 | 3.04 |
-| Efficiency | 0.119 | 0.793 | 0.796 |
-| TechnicalScore | 0.107 | **0.789** | **0.794** |
+| Hit Rate@10 | 0.125 | **0.935** | 0.925 |
+| MRR | 0.068 | **0.558** | 0.574 |
+| MTTC | 9.81 | **3.03** | 3.04 |
+| Efficiency | 0.119 | **0.798** | 0.796 |
+| TechnicalScore | 0.107 | **0.794** | **0.794** |
 
-Default / judge-friendly path is **hash** (or `none` without NumPy). MiniLM is explicit: `SHOPPILOT_DENSE=minilm` (needs `sentence-transformers`, first run embeds 50k once).
+Default / judge-friendly path is **hash** (or `none` without NumPy). MiniLM is explicit: `SHOPPILOT_DENSE=minilm` (needs `sentence-transformers`, first run embeds 50k once). Hash path includes weak long-term profile priors + catalog rating tie-breaks that scale down as session constraints accumulate (cold-start / tie-break only).
 
 TechnicalScore = `0.50×Hit@10 + 0.30×MRR + 0.20×clip((11−MTTC)/10, 0, 1)`.
 

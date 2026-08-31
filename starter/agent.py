@@ -1086,27 +1086,107 @@ class Agent:
                 score += 6.5
             elif match == "miss":
                 score -= 8.0
-        # Profile tags as a weak inductive prior (not hard filters).
-        for tag in state.profile.get("preference_tags") or []:
-            t = str(tag).lower().strip()
-            if t and t in text and t not in tags:
-                score += 0.3
+
+        # --- Long-term profile prior (weak; short-term constraints always dominate) ---
+        score += self._profile_prior(product, state, text, tags)
+
         store = product["store"].lower()
         for phrase in phrases:
             if phrase and phrase.lower() in store:
                 score += 1.2
-        for tag in tags:
-            if tag and tag in text:
-                score += 0.25
-        if product["rating"]:
-            score += 0.12 * product["rating"]
-        if product["n_ratings"]:
-            score += min(0.8, math.log10(1 + product["n_ratings"]) * 0.25)
+
+        # --- Catalog rating tie-break / cold-start quality prior (capped, small) ---
+        score += self._rating_prior(product, state)
+
         budget = self._budget(state)
         if budget is not None and product["price"]:
             rel = abs(product["price"] - budget) / max(budget, 1.0)
             score += 1.5 if rel < 0.35 else (-0.6 if rel > 1.5 else 0.0)
         return score
+
+    def _session_specificity(self, state: SessionState) -> str:
+        """How much short-term signal we have: cold | warm | hot."""
+        n = len(state.constraints)
+        if n <= 0 and not state.category:
+            return "cold"
+        if n <= 1:
+            return "warm"
+        return "hot"
+
+    def _profile_prior(
+        self,
+        product: dict,
+        state: SessionState,
+        text: str,
+        tags: list[str],
+    ) -> float:
+        """Long-term user_profile as a weak prior — stronger only on cold start."""
+        spec = self._session_specificity(state)
+        # Short-term wins: shrink profile influence as constraints accumulate.
+        weight = {"cold": 1.0, "warm": 0.55, "hot": 0.25}[spec]
+        delta = 0.0
+
+        profile = state.profile or {}
+        tag_list = [str(t).lower().strip() for t in (profile.get("preference_tags") or []) if t]
+        # Also skim summary for the same tags / simple quality words (no heavy NLP).
+        summary = str(profile.get("summary") or "").lower()
+        extra = []
+        for cue in ("fit", "comfort", "durability", "quality", "style", "value", "breathable"):
+            if cue in summary and cue not in tag_list:
+                extra.append(cue)
+        tag_list = list(dict.fromkeys(tag_list + extra))
+
+        seen_tags = {t.lower() for t in tags if t}
+        for t in tag_list:
+            if not t:
+                continue
+            if t in text:
+                # Avoid double-counting tags already passed in as `tags` list.
+                base = 0.22 if t in seen_tags else 0.35
+                delta += base * weight
+
+        # rating_style: only a tiny quality nudge when we lack session constraints.
+        style = str(profile.get("rating_style") or "").lower()
+        rating = float(product.get("rating") or 0.0)
+        if spec in {"cold", "warm"} and rating > 0:
+            if "positive" in style and rating >= 4.0:
+                delta += 0.15 * weight
+            elif "critical" in style or "harsh" in style or "negative" in style:
+                # Critical raters: slightly prefer well-reviewed items as safer bets.
+                if rating >= 4.2 and int(product.get("n_ratings") or 0) >= 20:
+                    delta += 0.12 * weight
+
+        # average_prior_rating: if user history is high-rated, tiny bias to higher stars
+        # when cold — never a hard filter.
+        prior = profile.get("average_prior_rating")
+        if spec == "cold" and prior is not None and rating > 0:
+            try:
+                prior_f = float(prior)
+            except (TypeError, ValueError):
+                prior_f = 0.0
+            if prior_f >= 4.5 and rating >= 4.0:
+                delta += 0.1
+        return delta
+
+    def _rating_prior(self, product: dict, state: SessionState) -> float:
+        """Product stars + volume as tie-break; slightly stronger on cold start only."""
+        rating = float(product.get("rating") or 0.0)
+        n = int(product.get("n_ratings") or 0)
+        if rating <= 0 and n <= 0:
+            return 0.0
+        spec = self._session_specificity(state)
+        # Keep small so family/constraints always dominate.
+        star_w = {"cold": 0.16, "warm": 0.12, "hot": 0.08}[spec]
+        vol_w = {"cold": 0.30, "warm": 0.25, "hot": 0.18}[spec]
+        delta = 0.0
+        if rating > 0:
+            delta += star_w * rating  # ~0.4–0.8 typical
+        if n > 0:
+            delta += min(0.7, math.log10(1 + n) * vol_w)
+        # Mild penalty for very low-rated with enough evidence (tie-break only).
+        if n >= 30 and 0 < rating < 3.0 and spec in {"cold", "warm"}:
+            delta -= 0.25
+        return delta
 
     def _budget(self, state: SessionState) -> float | None:
         for phrase in state.constraints:

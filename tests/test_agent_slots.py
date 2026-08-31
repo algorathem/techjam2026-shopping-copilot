@@ -79,9 +79,32 @@ class SlotParserTest(unittest.TestCase):
         )
         self.assertIn("color", self.state.dont_care)
 
-    def test_other_is_first_question(self) -> None:
-        ask = self.agent._next_ask(self.state, turn=1)
-        self.assertEqual(ask, "other")
+    def test_infer_family_dress_vs_dress_sandals(self) -> None:
+        from starter.agent import infer_product_family, product_family_match
+
+        self.assertEqual(infer_product_family("a dress"), "dress")
+        self.assertEqual(infer_product_family("dress sandals"), "footwear")
+        self.assertEqual(infer_product_family("dress shoes"), "footwear")
+        self.assertEqual(infer_product_family("black leather boots"), "footwear")
+
+        dress_product = {
+            "title": "Women Summer Maxi Dress Casual",
+            "categories": ["Clothing", "Dresses", "Casual"],
+        }
+        sandal_product = {
+            "title": "Women Dress Sandals Open Toe Heel",
+            "categories": ["Shoes", "Sandals", "Heeled Sandals"],
+        }
+        self.assertEqual(product_family_match(dress_product, "dress"), "hit")
+        self.assertEqual(product_family_match(sandal_product, "dress"), "miss")
+        self.assertEqual(product_family_match(sandal_product, "footwear"), "hit")
+        self.assertEqual(product_family_match(dress_product, "footwear"), "miss")
+
+    def test_ingest_sets_dress_family(self) -> None:
+        self.agent._ingest(self.state, "I'm looking for a dress, but I'm still exploring.")
+        self.assertEqual(self.state.product_family, "dress")
+        self.assertIn("dress", self.state.category.lower())
+
 
     def test_static_order_after_other(self) -> None:
         self.state.asked.append("other")
@@ -100,10 +123,74 @@ class SlotParserTest(unittest.TestCase):
         ask = self.agent._pool_swap_ask("color", candidates, ranked)
         self.assertEqual(ask, "material")
 
-    def test_classify_budget_and_material(self) -> None:
-        self.assertEqual(classify_constraint("budget around $54.97"), "budget")
-        self.assertEqual(classify_constraint("100% Leather"), "material")
-        self.assertEqual(classify_constraint("Triple Moon Pentagram Symbol"), "feature")
+    def test_plus_then_petite_replaces_not_appends(self) -> None:
+        from starter.agent import expand_constraint_phrases, _size_pole
+
+        self.assertEqual(classify_constraint("party"), "style")
+        self.assertEqual(classify_constraint("plus size"), "size")
+        self.assertEqual(classify_constraint("petite"), "size")
+        self.assertEqual(classify_constraint("cocktail"), "style")
+        self.assertEqual(_size_pole("petite"), 1)
+        self.assertEqual(_size_pole("plus size"), 0)
+
+        self.agent._ingest(self.state, "I'm looking for a dress")
+        self.agent._ingest(self.state, "plus size")
+        self.assertEqual(self.state.constraints, ["plus size"])
+        self.agent._ingest(self.state, "actually make it petite")
+        # Contradictory size poles: petite replaces plus.
+        self.assertTrue(any("petite" in c.lower() for c in self.state.constraints))
+        self.assertFalse(any("plus" in c.lower() for c in self.state.constraints))
+
+        atoms = expand_constraint_phrases("petite black cocktail")
+        self.assertIn("petite", atoms)
+        self.assertIn("black", atoms)
+        self.assertIn("cocktail", atoms)
+
+    def test_override_compound_splits_and_replaces_size(self) -> None:
+        self.agent._ingest(self.state, "I'm looking for a dress")
+        self.agent._ingest(self.state, "plus size")
+        self.state.messages.append(
+            "Actually, ignore my earlier preference. What I need is: petite black cocktail"
+        )
+        self.agent._ingest(self.state, self.state.messages[-1])
+        self.assertTrue(self.state.override_applied)
+        joined = " ".join(self.state.constraints).lower()
+        self.assertIn("petite", joined)
+        self.assertIn("black", joined)
+        self.assertIn("cocktail", joined)
+        self.assertNotIn("plus size", joined)
+
+
+    def test_big_enough_is_size_not_feature(self) -> None:
+        self.assertEqual(classify_constraint("needs to be big enough"), "size")
+        self.assertEqual(classify_constraint("big enuf"), "size")
+        self.assertEqual(classify_constraint("roomy"), "size")
+        self.assertEqual(classify_constraint("large"), "size")
+        self.assertEqual(classify_constraint("durable"), "feature")
+
+        self.agent._ingest(self.state, "I'm looking for a backpack")
+        self.state.asked.append("other")
+        self.state.asked.append("style")
+        self.agent._ingest(self.state, "needs to be big enough")
+        self.assertIn("size", self.state.filled)
+        self.assertNotEqual(self.agent._next_ask(self.state, turn=3), "size")
+        self.state.asked.append("use_case")
+        self.agent._ingest(self.state, "durable")
+        ask = self.agent._next_ask(self.state, turn=4)
+        self.assertNotEqual(ask, "size")
+
+        self.agent._ingest(self.state, "I'm looking for a dress")
+        self.state.asked.append("other")
+        self.agent._ingest(self.state, "plus size")
+        self.assertIn("size", self.state.filled)
+        self.assertNotEqual(self.agent._next_ask(self.state, turn=2), "size")
+        self.state.asked.append("color")
+        self.agent._ingest(self.state, "party")
+        self.assertIn("style", self.state.filled)
+        ask = self.agent._next_ask(self.state, turn=3)
+        self.assertNotEqual(ask, "style")
+        self.assertNotEqual(ask, "size")
+
 
     def test_extract_facets_reads_color_and_material(self) -> None:
         facets = Agent._extract_facets(

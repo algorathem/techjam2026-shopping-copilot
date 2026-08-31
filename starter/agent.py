@@ -102,10 +102,162 @@ NO_PREF_RE = re.compile(
     re.IGNORECASE,
 )
 OVERRIDE_RE = re.compile(
-    r"ignore my earlier|actually,?\s+ignore my",
+    r"ignore my earlier|actually,?\s+ignore my|"
+    r"actually\s+forget|forget\s+(?:the|my|that|about|it)|"
+    r"never\s*mind\s+(?:the|my|that)|scratch\s+that|"
+    r"change\s+of\s+plans|instead\.?\s+i\s+(?:need|want)|"
+    r"switch(?:ing)?\s+to\b",
     re.IGNORECASE,
 )
 
+# Coarse product-family intent. Token "dress" alone matches footwear
+# ("dress sandals"); family routing separates garment vs shoe senses.
+FAMILY_PATTERNS: list[tuple[str, tuple[re.Pattern[str], ...]]] = [
+    ("footwear", tuple(re.compile(p, re.I) for p in (
+        r"dress\s+shoes?", r"dress\s+sandals?", r"dress\s+heels?",
+        r"dress\s+boots?", r"dress\s+loafers?", r"dress\s+pumps?",
+        r"\bshoes?\b", r"\bsandals?\b", r"\bboots?\b", r"\bsneakers?\b",
+        r"\bheels?\b", r"\bloafers?\b", r"\bpumps?\b", r"\bslippers?\b",
+        r"\bfootwear\b", r"\btrainers?\b", r"ankle\s+boots?",
+    ))),
+    ("dress", tuple(re.compile(p, re.I) for p in (
+        r"\bdress(?:es)?\b", r"\bgown\b", r"\bsundress\b", r"maxi\s+dress",
+        r"cocktail\s+dress",
+    ))),
+    ("top", tuple(re.compile(p, re.I) for p in (
+        r"\bshirts?\b", r"\bt-?shirts?\b", r"\bblouses?\b", r"\btops?\b",
+        r"\btanks?\b", r"\bsweaters?\b", r"\bhoodies?\b",
+    ))),
+    ("bottom", tuple(re.compile(p, re.I) for p in (
+        r"\bjeans?\b", r"\bpants?\b", r"\btrousers?\b", r"\bleggings?\b",
+        r"\bshorts?\b", r"\bskirts?\b",
+    ))),
+    ("outerwear", tuple(re.compile(p, re.I) for p in (
+        r"\bjackets?\b", r"\bcoats?\b", r"\bblazers?\b", r"\bparkas?\b",
+    ))),
+    ("bag", tuple(re.compile(p, re.I) for p in (
+        r"\bbags?\b", r"\bhandbags?\b", r"\bpurses?\b", r"\bbackpacks?\b",
+        r"\btotes?\b",
+    ))),
+    ("jewelry", tuple(re.compile(p, re.I) for p in (
+        r"\bjewelry\b", r"\bjewellery\b", r"\bnecklaces?\b", r"\bearrings?\b",
+        r"\bbracelets?\b", r"\brings?\b", r"\bwatches?\b", r"\bwatch\b",
+    ))),
+    ("belt", tuple(re.compile(p, re.I) for p in (r"\bbelts?\b",))),
+    ("hat", tuple(re.compile(p, re.I) for p in (r"\bhats?\b", r"\bcaps?\b", r"\bbeanies?\b"))),
+]
+
+# Catalog path keywords that confirm a family (matched against categories+title).
+FAMILY_CATALOG_HINTS: dict[str, tuple[str, ...]] = {
+    "footwear": (
+        "shoe", "shoes", "sandal", "sandals", "boot", "boots", "sneaker",
+        "heel", "heels", "loafer", "pump", "slipper", "footwear", "trainer",
+        "oxford", "mule",
+    ),
+    "dress": ("dress", "dresses", "gown", "sundress"),
+    "top": (
+        "shirt", "shirts", "blouse", "top", "tops", "sweater", "hoodie",
+        "tee", "tank",
+    ),
+    "bottom": (
+        "jean", "jeans", "pant", "pants", "short", "shorts", "skirt", "skirts",
+        "legging", "trouser",
+    ),
+    "outerwear": ("jacket", "coat", "blazer", "parka", "outerwear"),
+    "bag": ("bag", "bags", "handbag", "purse", "backpack", "tote"),
+    "jewelry": (
+        "jewelry", "jewellery", "necklace", "earring", "bracelet", "ring",
+        "watch",
+    ),
+    "belt": ("belt", "belts"),
+    "hat": ("hat", "hats", "cap", "caps", "beanie"),
+}
+
+# Families that should not leak into each other when intent is locked.
+FAMILY_CONFLICTS: dict[str, frozenset[str]] = {
+    "dress": frozenset({"footwear"}),
+    "footwear": frozenset({"dress"}),
+    "top": frozenset({"footwear", "dress", "bottom"}),
+    "bottom": frozenset({"footwear", "dress", "top"}),
+}
+
+
+def infer_product_family(text: str) -> str | None:
+    """Return coarse family intent from free text, or None if unknown."""
+    lowered = (text or "").lower()
+    if not lowered.strip():
+        return None
+    for family, patterns in FAMILY_PATTERNS:
+        for pattern in patterns:
+            if pattern.search(lowered):
+                return family
+    return None
+
+
+# Amazon root path that contains the substring "Shoes" but is not footwear-specific.
+_ROOT_NOISE = {
+    "clothing, shoes & jewelry",
+    "clothing shoes & jewelry",
+    "clothing, shoes and jewelry",
+}
+
+
+def _has_hint(text: str, hints: tuple[str, ...]) -> bool:
+    """Whole-word / path-segment hint match (avoid 'shoe' in 'Clothing, Shoes & Jewelry')."""
+    if not text:
+        return False
+    lowered = text.lower()
+    for hint in hints:
+        if re.search(rf"(?<![a-z0-9]){re.escape(hint)}(?![a-z0-9])", lowered):
+            return True
+    return False
+
+
+def _leaf_categories(product: dict) -> str:
+    cats = [str(c).strip() for c in (product.get("categories") or []) if str(c).strip()]
+    cleaned = [c for c in cats if c.lower() not in _ROOT_NOISE]
+    use = cleaned if cleaned else cats
+    return " ".join(u.lower() for u in use[-3:])
+
+
+def product_family_match(product: dict, family: str) -> str:
+    """Return 'hit' | 'miss' | 'unknown' for product vs intended family."""
+    hints = FAMILY_CATALOG_HINTS.get(family)
+    if not hints:
+        return "unknown"
+    leaf = _leaf_categories(product)
+    title = (product.get("title") or "").lower()
+    blob = f"{leaf} {title}"
+
+    # Conflict-first for dress ↔ footwear (token "dress" appears in both).
+    if family == "dress":
+        if _has_hint(leaf, FAMILY_CATALOG_HINTS["footwear"]):
+            return "miss"
+        if "dress" in title and _has_hint(
+            title,
+            ("sandal", "sandals", "shoe", "shoes", "heel", "heels", "boot", "boots",
+             "pump", "pumps", "loafer", "loafers", "sneaker", "slippers"),
+        ):
+            return "miss"
+    if family == "footwear":
+        # Garment dress path without footwear leaf → miss.
+        if _has_hint(leaf, ("dress", "dresses", "gown", "skirt", "skirts")) and not _has_hint(
+            leaf, FAMILY_CATALOG_HINTS["footwear"]
+        ):
+            return "miss"
+        if _has_hint(leaf, ("dress", "dresses")) and not _has_hint(
+            title, FAMILY_CATALOG_HINTS["footwear"]
+        ):
+            return "miss"
+
+    if _has_hint(blob, hints):
+        return "hit"
+    conflicts = FAMILY_CONFLICTS.get(family, frozenset())
+    for other in conflicts:
+        other_hints = FAMILY_CATALOG_HINTS.get(other, ())
+        if _has_hint(leaf, other_hints):
+            return "miss"
+    return "unknown"
 
 def _text(value: object) -> str:
     if value is None:
@@ -126,22 +278,176 @@ def _terms(text: str, *, keep_stop: bool = False) -> list[str]:
 
 def classify_constraint(value: str) -> str:
     """Map a free-text constraint onto the official ask_attribute enum."""
-    lowered = value.lower()
+    lowered = value.lower().strip()
     if "budget" in lowered or re.search(r"(?:\$|<=|under)\s*\d", lowered):
         return "budget"
+    # Size BEFORE color so "petite" / "plus size" win over mixed phrases.
+    # Require "plus size" (not bare "plus") to avoid matching unrelated text.
+    size_cues = (
+        "size", "sizing", "width", "wide", "narrow", "plus-size", "plus size",
+        "petite", "maternity", "xxl", "x-small", "x-large",
+        "big enough", "big enuf", "large enough", "bigger",
+        "too small", "too big", "roomy", "oversized", "oversize", "one size",
+        "plus sized", "extra large", "extra-large", "extra small",
+        "big size", "needs to be big", "make it big", "a bit big",
+        "spacious", "more room", "more space", "lots of room", "extra room",
+    )
+    # Bare "big" / "large" as a short answer = size (not "big brand" essays).
+    if lowered in {"big", "large", "small", "medium", "bigger", "roomy", "spacious"}:
+        return "size"
+    if any(word in lowered for word in size_cues) or re.search(
+        r"\b(xs|xl|xxl|2xl|3xl|large|small|medium)\b", lowered
+    ):
+        # Bare color words stay color.
+        if lowered not in set(COLORS) and lowered != "color":
+            return "size"
+    # "… big" as the main ask (short phrases only) → size.
+    if len(lowered) <= 24 and re.search(r"\bbig\b", lowered) and not re.search(
+        r"\b(brand|deal|fan|surpris|issue|problem)\b", lowered
+    ):
+        return "size"
     if any(material in lowered for material in MATERIALS):
         return "material"
     if any(word in lowered for word in ("color", *COLORS)):
         return "color"
-    if any(word in lowered for word in ("size", "sizing", "width", "wide", "narrow")):
-        return "size"
+    # Short occasion answers → style. Long kit feature blobs stay "feature".
+    short = len(lowered) <= 40
+    if short and any(
+        word in lowered
+        for word in (
+            "party", "cocktail", "formal", "casual", "wedding", "prom", "evening",
+            "office", "boho", "vintage", "maxi", "mini", "midi", "bodycon", "wrap",
+            "shift", "a-line", "aline",
+        )
+    ):
+        return "style"
     if any(word in lowered for word in ("department", "style", "fit", "sleeve", "neck")):
         return "style"
-    if any(word in lowered for word in ("hiking", "running", "gym", "winter", "outdoor", "work", "walking")):
+    if any(
+        word in lowered
+        for word in (
+            "hiking", "running", "gym", "winter", "summer", "outdoor", "work",
+            "walking", "beach", "travel",
+        )
+    ):
         return "use_case"
     if any(word in lowered for word in ("brand", "store", "made by")):
         return "brand"
     return "feature"
+
+
+# Mutually exclusive size "poles" — plus and petite must not both survive.
+_SIZE_POLES: tuple[frozenset[str], ...] = (
+    frozenset({"plus", "plus-size", "plussize", "1x", "2x", "3x", "xxl", "2xl", "3xl", "maternity"}),
+    frozenset({"petite", "junior", "xs", "x-small", "xsmall"}),
+)
+
+
+def _size_pole(text: str) -> int | None:
+    tokens = set(_terms(text))
+    compact = text.lower().replace(" ", "").replace("-", "")
+    for idx, pole in enumerate(_SIZE_POLES):
+        if tokens & pole:
+            return idx
+        if any(p.replace("-", "") in compact for p in pole):
+            return idx
+    return None
+
+
+def expand_constraint_phrases(blob: str, *, force_atoms: bool = False) -> list[str]:
+    """Split compound answers into atomic slot fillers when multi-slot cues exist.
+
+    'petite black cocktail' → ['petite', 'black', 'cocktail']
+    'black leather ankle boots … under $60' → color/material/size/budget atoms
+    Long kit feature sentences with no clear atoms stay intact (leaderboard-safe).
+    """
+    text = re.sub(r"\s+", " ", (blob or "")).strip(" -;,.\t\n")
+    if not text:
+        return []
+
+    lowered = text.lower()
+    atoms: list[str] = []
+
+    # Size poles / cues
+    if re.search(r"\bplus([\s-]?size)?\b", lowered):
+        atoms.append("plus size")
+    if re.search(r"\bpetite\b", lowered):
+        atoms.append("petite")
+    if re.search(r"\b(spacious|roomy|more room|more space|big enough|too big|too small)\b", lowered):
+        m = re.search(r"\b(spacious|roomy|more room|more space|big enough|too big|too small)\b", lowered)
+        if m:
+            atoms.append(m.group(1))
+    # bare size markers: size 8 / women's size 8 / size medium
+    m = re.search(r"\bsize\s*(\d{1,2}|xs|s|m|l|xl|xxl|2xl|3xl|small|medium|large)\b", lowered)
+    if m:
+        atoms.append(f"size {m.group(1)}")
+    elif re.search(r"\b(xs|xl|xxl|2xl|3xl)\b", lowered):
+        m2 = re.search(r"\b(xs|xl|xxl|2xl|3xl)\b", lowered)
+        if m2:
+            atoms.append(m2.group(1))
+
+    # Budget
+    m = re.search(r"(?:under|below|<=|less than)\s*\$?\s*(\d+(?:\.\d+)?)", lowered)
+    if m:
+        atoms.append(f"budget under ${m.group(1)}")
+    else:
+        m = re.search(r"\$\s*(\d+(?:\.\d+)?)", lowered)
+        if m and re.search(r"\b(budget|price|under|below|less)\b", lowered):
+            atoms.append(f"budget around ${m.group(1)}")
+
+    # Colors (prefer multiword first)
+    for color in sorted(COLORS, key=len, reverse=True):
+        if re.search(rf"\b{re.escape(color)}\b", lowered):
+            atoms.append(color)
+    # rose gold style
+    if re.search(r"\brose\s+gold\b", lowered):
+        atoms.append("rose gold")
+
+    # Materials
+    for material in sorted(MATERIALS, key=len, reverse=True):
+        if re.search(rf"\b{re.escape(material)}\b", lowered):
+            atoms.append(material)
+    if re.search(r"\btitanium\b", lowered):
+        atoms.append("titanium")
+    if re.search(r"\bwool\b", lowered):
+        atoms.append("wool")
+    if re.search(r"\bhypoallergenic\b", lowered):
+        atoms.append("hypoallergenic")
+
+    # Style / occasion
+    for style in (
+        "party", "cocktail", "formal", "casual", "wedding", "prom", "evening",
+        "office", "boho", "vintage", "maxi", "mini", "midi", "bodycon",
+        "business casual", "beach",
+    ):
+        if re.search(rf"\b{re.escape(style)}\b", lowered):
+            atoms.append(style)
+
+    # Dedupe preserve order
+    if atoms:
+        seen: set[str] = set()
+        out: list[str] = []
+        for atom in atoms:
+            key = atom.lower()
+            if key not in seen:
+                seen.add(key)
+                out.append(atom[:180])
+        # If we only found 1 weak atom from a long kit feature sentence, keep whole
+        # unless force_atoms or clearly multi-slot (>=2) or short text.
+        if force_atoms or len(out) >= 2 or len(text) <= 64:
+            return out
+        # single atom on long text — still useful if it's budget/size/color/material
+        if classify_constraint(out[0]) in {"budget", "size", "color", "material", "style"}:
+            # Keep atom AND whole phrase for retrieval recall on kit features
+            if len(text) > 80 and classify_constraint(text) == "feature":
+                return out + [text[:180]]
+            return out
+
+    # No atoms — split on ;/newline only
+    parts = _split_constraints(text)
+    if parts:
+        return parts
+    return [text[:180]] if len(text) >= 3 else []
 
 
 def _split_constraints(blob: str) -> list[str]:
@@ -158,6 +464,7 @@ def _split_constraints(blob: str) -> list[str]:
 class SessionState:
     profile: dict
     category: str = ""
+    product_family: str | None = None
     constraints: list[str] = field(default_factory=list)
     # Parallel to constraints: "soft" (pre-override free text) | "disclosed" | "override"
     constraint_sources: list[str] = field(default_factory=list)
@@ -177,19 +484,75 @@ class SessionState:
         item = re.sub(r"\s+", " ", value).strip(" -;,.\t\n")
         if len(item) < 3:
             return
+        # Strip trailing "instead" noise from replacements ("black instead").
+        item = re.sub(r"\s+instead\b\.?$", "", item, flags=re.I).strip()
+        if len(item) < 3:
+            return
         key = item.lower()
         existing = {c.lower() for c in self.constraints}
         if key in existing:
-            # Upgrade source if we re-see a soft constraint as disclosed/override.
             if source in {"disclosed", "override"}:
                 for index, current in enumerate(self.constraints):
                     if current.lower() == key:
                         self.constraint_sources[index] = source
                         break
             return
+
+        kind = classify_constraint(item)
+
+        # Latest-wins for short SOFT color/material only (demo UX).
+        # Do NOT apply to disclosed kit feature sentences (hurts TechScore).
+        if source == "soft" and kind in {"color", "material"} and len(item) <= 24:
+            drop_idx = [
+                i
+                for i, old in enumerate(self.constraints)
+                if self.constraint_sources[i] == "soft"
+                and classify_constraint(old) == kind
+                and len(old) <= 24
+            ]
+            for i in reversed(drop_idx):
+                dropped = self.constraints.pop(i)
+                self.constraint_sources.pop(i)
+                self.discarded_terms.update(_terms(dropped))
+
         self.constraints.append(item[:180])
         self.constraint_sources.append(source)
-        self.filled.add(classify_constraint(item))
+        self.filled.add(kind)
+        self._resolve_size_conflicts(prefer=item)
+        self.filled = {classify_constraint(c) for c in self.constraints} | set(self.filled)
+
+    def _resolve_size_conflicts(self, prefer: str | None = None) -> None:
+        """If both plus-size and petite poles are present, keep the preferred/latest."""
+        poles_present: dict[int, list[int]] = {}
+        for i, phrase in enumerate(self.constraints):
+            if classify_constraint(phrase) != "size":
+                continue
+            pole = _size_pole(phrase)
+            if pole is None:
+                continue
+            poles_present.setdefault(pole, []).append(i)
+        if len(poles_present) < 2:
+            # Still allow latest pure pole to replace older same-pole duplicates.
+            return
+        prefer_pole = _size_pole(prefer or "") if prefer else None
+        if prefer_pole is None:
+            # Keep the pole of the last size constraint.
+            for phrase in reversed(self.constraints):
+                p = _size_pole(phrase)
+                if p is not None:
+                    prefer_pole = p
+                    break
+        if prefer_pole is None:
+            return
+        drop = []
+        for pole, idxs in poles_present.items():
+            if pole != prefer_pole:
+                drop.extend(idxs)
+        for i in reversed(sorted(set(drop))):
+            dropped = self.constraints.pop(i)
+            self.constraint_sources.pop(i)
+            self.discarded_terms.update(_terms(dropped))
+        self.filled = {classify_constraint(c) for c in self.constraints}
 
     def apply_override(self) -> None:
         """Erase discarded soft prefs; keep simulator-disclosed hard facts."""
@@ -370,10 +733,30 @@ class Agent:
             category = re.sub(r", but i'?m still exploring.*", "", category, flags=re.I).strip()
             if category:
                 state.category = category
+                family = infer_product_family(category) or infer_product_family(text)
+                if family:
+                    state.product_family = family
+        else:
+            # Free-form ("I want a dress") still sets family intent.
+            family = infer_product_family(text)
+            if family and not state.product_family:
+                state.product_family = family
+            if family and not state.category and len(text) < 80:
+                # Keep a lightweight category string for query terms when possible.
+                for token in ("dress", "dresses", "shoes", "sandals", "boots", "jeans", "shirt"):
+                    if re.search(rf"\b{token}\b", text, flags=re.I):
+                        state.category = token
+                        break
         if re.search(r"still exploring", text, re.I):
             state.browsing = True
         if re.search(r"key requirement is", text, re.I):
             state.browsing = False
+        # Override message carries the NEW family ("What I need is: ...") — already
+        # applied above via require/looking; also re-infer from full override text.
+        if OVERRIDE_RE.search(text):
+            family = infer_product_family(text)
+            if family:
+                state.product_family = family
         no_pref = NO_PREF_RE.search(text)
         if no_pref:
             attr = no_pref.group(1).lower()
@@ -387,10 +770,17 @@ class Agent:
                     state.dont_care.add(attr)
         require = REQUIRE_RE.search(text)
         if require:
-            # Simulator disclosures + override "What I need is:" land here.
+            # Simulator disclosures must stay WHOLE (kit feature sentences).
+            # Override short compounds may atomize for multi-slot UX.
             source = "override" if OVERRIDE_RE.search(text) else "disclosed"
-            for item in _split_constraints(require.group(1)):
-                state.add_constraint(item, source=source)
+            raw = require.group(1)
+            if source == "override":
+                items = expand_constraint_phrases(raw, force_atoms=True)
+            else:
+                items = _split_constraints(raw) or [raw.strip()[:180]]
+            for item in items:
+                if item:
+                    state.add_constraint(item, source=source)
             return
         # Generic follow-up that is not the "ask me something" stall line.
         if re.search(r"not quite right yet", text, re.I):
@@ -403,10 +793,36 @@ class Agent:
         if leftover and not re.search(r"still exploring", leftover, re.I):
             # Ignore the canned stall prompt; keep any extra user-provided detail.
             if "ask me about one specific attribute" not in leftover.lower():
-                for item in _split_constraints(leftover):
-                    if len(_terms(item)) >= 2:
+                # Strip soft rewrite lead-ins ("actually make it petite" → "petite").
+                cleaned = leftover
+                for _ in range(3):
+                    nxt = re.sub(
+                        r"^(actually|instead|rather|please|make it|switch to|change (it )?to|not)\b[\s,:-]*",
+                        "",
+                        cleaned,
+                        flags=re.I,
+                    ).strip(" .")
+                    if nxt == cleaned:
+                        break
+                    cleaned = nxt or cleaned
+                # Rich first-turn / multi-slot freeform → force atom extract.
+                parts = expand_constraint_phrases(
+                    cleaned,
+                    force_atoms=(len(cleaned) > 24 or len(_terms(cleaned)) >= 4),
+                )
+                if not parts and len(cleaned) >= 3:
+                    parts = [cleaned[:180]]
+                for item in parts:
+                    if len(_terms(item)) >= 1:
                         state.add_constraint(item, source="soft")
-
+                if state.asked and parts:
+                    last = state.asked[-1]
+                    if last and last not in {"other", "category"} and last not in state.dont_care:
+                        kinds = {classify_constraint(p) for p in parts}
+                        if last in kinds:
+                            state.filled.add(last)
+                        elif len(parts) == 1 and classify_constraint(parts[0]) == "feature":
+                            state.filled.add(last)
     def _next_ask(
         self,
         state: SessionState,
@@ -662,6 +1078,19 @@ class Agent:
         for token in _terms(state.category):
             if token in " ".join(c.lower() for c in product["categories"]):
                 score += 0.8
+        # Product-family intent: boost true category path, penalize conflicts
+        # ("dress" garment vs "dress sandals" footwear).
+        if state.product_family:
+            match = product_family_match(product, state.product_family)
+            if match == "hit":
+                score += 6.5
+            elif match == "miss":
+                score -= 8.0
+        # Profile tags as a weak inductive prior (not hard filters).
+        for tag in state.profile.get("preference_tags") or []:
+            t = str(tag).lower().strip()
+            if t and t in text and t not in tags:
+                score += 0.3
         store = product["store"].lower()
         for phrase in phrases:
             if phrase and phrase.lower() in store:
@@ -692,23 +1121,36 @@ class Agent:
         ask: str | None,
         ranked: list[tuple[str, float]] | None = None,
     ) -> str:
+        known = []
+        if state.category:
+            known.append(state.category)
+        known.extend(state.constraints[:3])
+        known_bit = ""
+        if known:
+            known_bit = "Got it (" + "; ".join(known) + "). "
+
         if ask == "other":
             return (
-                "I have a shortlist. Is there another must-have I should lock in "
+                f"{known_bit}Is there another must-have I should lock in "
                 "(a feature, brand, or how you will use it)?"
-            )
+            ).strip()
         if ask:
             pretty = ask.replace("_", " ")
+            # Never re-ask something already filled (message-level safety net).
+            if ask in state.filled or ask in state.dont_care:
+                return (
+                    f"{known_bit}Here are closer matches from what you shared so far."
+                ).strip()
             options = self._facet_options(ask, ranked or [])
             if options:
                 joined = ", ".join(options[:4])
                 return (
-                    f"To narrow this down, any {pretty} preference "
+                    f"{known_bit}Any {pretty} preference "
                     f"(for example: {joined})?"
-                )
-            return f"To narrow this down, do you have a {pretty} preference?"
+                ).strip()
+            return f"{known_bit}Do you have a {pretty} preference?".strip()
         if state.constraints:
-            return "Here are the closest matches given the requirements you shared."
+            return f"{known_bit}Here are the closest matches given your requirements.".strip()
         return "Here are the closest matches I found so far."
 
     def _facet_options(self, attr: str, ranked: list[tuple[str, float]]) -> list[str]:

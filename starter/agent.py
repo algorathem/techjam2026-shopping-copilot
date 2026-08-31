@@ -310,16 +310,27 @@ def classify_constraint(value: str) -> str:
         return "material"
     if any(word in lowered for word in ("color", *COLORS)):
         return "color"
-    # Short occasion answers → style. Long kit feature blobs stay "feature".
+    # Short occasion / vibe answers → style. Long kit feature blobs stay "feature".
     short = len(lowered) <= 40
-    if short and any(
-        word in lowered
-        for word in (
-            "party", "cocktail", "formal", "casual", "wedding", "prom", "evening",
-            "office", "boho", "vintage", "maxi", "mini", "midi", "bodycon", "wrap",
-            "shift", "a-line", "aline",
-        )
-    ):
+    style_cues = (
+        # occasion / silhouette
+        "party", "cocktail", "formal", "casual", "wedding", "prom", "evening",
+        "office", "boho", "vintage", "maxi", "mini", "midi", "bodycon", "wrap",
+        "shift", "a-line", "aline", "business casual", "business",
+        # vibe / aesthetic (shopper language → style slot)
+        "professional", "cute", "cool", "pretty", "elegant", "chic", "classy",
+        "minimal", "minimalist", "trendy", "street", "streetwear", "sporty",
+        "athleisure", "girly", "flirty", "edgy", "classic", "preppy", "cozy",
+        "romantic", "glam", "glamorous", "modest", "sexy", "playful", "clean",
+    )
+    if short and any(word in lowered for word in style_cues):
+        return "style"
+    # Bare single-token vibes even if slightly odd casing
+    if lowered in {
+        "cool", "cute", "pretty", "professional", "elegant", "chic", "classy",
+        "minimal", "trendy", "sporty", "cozy", "edgy", "classic", "preppy",
+        "romantic", "glam", "modest", "playful",
+    }:
         return "style"
     if any(word in lowered for word in ("department", "style", "fit", "sleeve", "neck")):
         return "style"
@@ -414,11 +425,13 @@ def expand_constraint_phrases(blob: str, *, force_atoms: bool = False) -> list[s
     if re.search(r"\bhypoallergenic\b", lowered):
         atoms.append("hypoallergenic")
 
-    # Style / occasion
+    # Style / occasion / vibe
     for style in (
         "party", "cocktail", "formal", "casual", "wedding", "prom", "evening",
         "office", "boho", "vintage", "maxi", "mini", "midi", "bodycon",
-        "business casual", "beach",
+        "business casual", "beach", "professional", "cute", "cool", "pretty",
+        "elegant", "chic", "classy", "minimal", "trendy", "sporty", "cozy",
+        "edgy", "classic", "preppy", "romantic", "glam",
     ):
         if re.search(rf"\b{re.escape(style)}\b", lowered):
             atoms.append(style)

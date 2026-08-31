@@ -192,6 +192,15 @@ class SlotParserTest(unittest.TestCase):
         self.assertNotEqual(ask, "size")
 
 
+    def test_vibe_words_map_to_style(self) -> None:
+        for vibe in ("cool", "cute", "professional", "elegant", "chic", "sporty"):
+            self.assertEqual(classify_constraint(vibe), "style", vibe)
+        self.agent._ingest(self.state, "I'm looking for a dress")
+        self.state.asked.append("other")
+        self.agent._ingest(self.state, "something cute and professional")
+        self.assertIn("style", self.state.filled)
+        self.assertNotEqual(self.agent._next_ask(self.state, turn=2), "style")
+
     def test_extract_facets_reads_color_and_material(self) -> None:
         facets = Agent._extract_facets(
             "black leather hiking boots for outdoor use",

@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import socket
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -293,9 +294,9 @@ def _chat_gemini(system: str, user: str, key: str) -> tuple[str | None, int, int
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=18) as response:
+        with urllib.request.urlopen(request, timeout=25) as response:
             body = json.loads(response.read().decode("utf-8"))
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError) as exc:
+    except (urllib.error.URLError, TimeoutError, socket.timeout, json.JSONDecodeError, ValueError) as exc:
         if os.environ.get("SHOPPILOT_LLM_DEBUG") == "1":
             print(f"[llm_slots] gemini error: {type(exc).__name__}: {exc}")
         return None, 0, 0
@@ -329,9 +330,9 @@ def _chat_xai(system: str, user: str, key: str) -> tuple[str | None, int, int]:
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=15) as response:
+        with urllib.request.urlopen(request, timeout=20) as response:
             body = json.loads(response.read().decode("utf-8"))
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError):
+    except (urllib.error.URLError, TimeoutError, socket.timeout, json.JSONDecodeError, ValueError):
         return None, 0, 0
     usage = body.get("usage") or {}
     pt = int(usage.get("prompt_tokens") or 0)

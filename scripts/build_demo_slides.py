@@ -34,7 +34,7 @@ OUT = ROOT / "docs" / "ShopPilot_Demo_Slides.pptx"
 ARCH_PNG = ROOT / "docs" / "architecture_diagram.png"
 LIT_PNG = ROOT / "docs" / "architecture_literature.png"
 W, H = Inches(13.333), Inches(7.5)
-TOTAL_SLIDES = 11
+TOTAL_SLIDES = 9
 
 # Live public-200 metrics (results.json) vs weak BM25 baseline
 BASE = {"tech": 0.107, "hit": 0.125, "mrr": 0.068, "mttc": 9.81}
@@ -352,37 +352,64 @@ def slide_problem(prs):
 
 
 def slide_solution(prs):
+    """Solution pipeline + literature framing on ONE editable slide."""
     s = prs.slides.add_slide(prs.slide_layouts[6])
     _bg(s)
     _accent_rail(s)
-    _section_label(s, "02  ·  Solution")
-    _title(s, "Headless offline agent — one turn, three outputs")
-    _subtitle(s, "Each respond() returns message + one ask_attribute + Top-10 ASINs. No required LLM.")
+    _section_label(s, "02  ·  Solution + literature")
+    _title(s, "Headless offline agent — classical CRS spine", size=24)
+    _subtitle(
+        s,
+        "respond() → message + one ask_attribute + Top-10  ·  No required LLM  ·  Same stack as CRS/DST/CQ literature",
+        y=1.0,
+        size=13,
+    )
 
+    # LEFT: 5-step solution (compact vertical)
+    _textbox(s, Inches(0.45), Inches(1.35), Inches(6), Inches(0.28), [("SHIPPED PIPELINE", 11, True, CYAN)])
     steps = [
-        ("1", "Intent", "Buy / browse · family · audience", CYAN),
-        ("2", "State", "Slots · override hygiene · multi-fill", PINK),
-        ("3", "Retrieve", "FTS5 OR/AND + dense hash hybrid", CYAN),
-        ("4", "Clarify", "other-first · skip filled · ≤10 turns", PINK),
-        ("5", "Rank", "Constraint coverage · family · light priors", VIOLET),
+        ("1", "Ingest / NLU", "buy·browse · family · audience · slots", CYAN),
+        ("2", "SessionState", "soft | disclosed | override · DST", PINK),
+        ("3", "Hybrid retrieve", "FTS5 BM25 + dense hash", VIOLET),
+        ("4", "Clarify", "other-first ladder · skip filled", GOLD),
+        ("5", "Rank + respond", "coverage · Top-10 + ask", GOOD),
     ]
     for i, (n, h, b, col) in enumerate(steps):
-        y = Inches(1.65 + i * 0.95)
-        # connector
-        if i < len(steps) - 1:
-            _bar(s, Inches(0.92), y + Inches(0.55), Inches(0.04), Inches(0.45), LINE)
-        circ = _oval(s, Inches(0.7), y, Inches(0.5), Inches(0.5), col)
+        y = 1.7 + i * 0.9
+        circ = _oval(s, Inches(0.55), Inches(y), Inches(0.42), Inches(0.42), col)
         tf = circ.text_frame
         tf.paragraphs[0].alignment = PP_ALIGN.CENTER
         run = tf.paragraphs[0].add_run()
-        _set_run(run, n, size=16, bold=True, color=BG)
+        _set_run(run, n, size=13, bold=True, color=BG)
         try:
-            tf.paragraphs[0].space_before = Pt(6)
+            tf.paragraphs[0].space_before = Pt(4)
         except Exception:
             pass
-        _rect(s, Inches(1.5), y - Inches(0.08), Inches(11.0), Inches(0.7), CARD, corner=0.12)
-        _textbox(s, Inches(1.75), y + Inches(0.05), Inches(2.4), Inches(0.4), [(h, 18, True, WHITE)])
-        _textbox(s, Inches(4.3), y + Inches(0.08), Inches(7.8), Inches(0.4), [(b, 16, False, MUTED)])
+        _rect(s, Inches(1.15), Inches(y - 0.08), Inches(5.3), Inches(0.7), CARD, corner=0.1)
+        _bar(s, Inches(1.15), Inches(y - 0.08), Inches(0.08), Inches(0.7), col)
+        _textbox(s, Inches(1.4), Inches(y - 0.02), Inches(4.9), Inches(0.3), [(h, 15, True, WHITE)])
+        _textbox(s, Inches(1.4), Inches(y + 0.28), Inches(4.9), Inches(0.28), [(b, 12, False, MUTED)])
+        if i < len(steps) - 1:
+            _bar(s, Inches(0.74), Inches(y + 0.42), Inches(0.04), Inches(0.4), LINE)
+
+    # RIGHT: literature map
+    _textbox(s, Inches(6.8), Inches(1.35), Inches(6), Inches(0.28), [("LITERATURE → MODULE", 11, True, PINK)])
+    lit_rows = [
+        ("CRS pipeline", "NLU → DST → Policy → IR", "our hot path", CYAN),
+        ("DST (1712.10224)", "slot–value belief state", "SessionState + sources", VIOLET),
+        ("Qulac / CQs", "ask + retrieve each turn", "Top-10 + ask_attribute", GOLD),
+        ("Bayesian max-IG", "entropy ask selection", "REJECTED · Tech ~0.72", PINK),
+        ("Corpus-informed CQ", "only catalog-supported asks", "facet chips in message", GOOD),
+        ("Hybrid IR", "BM25 + dense late fusion", "FTS5 + hash dense", CYAN),
+    ]
+    for i, (paper, concept, ours, col) in enumerate(lit_rows):
+        y = 1.7 + i * 0.8
+        _rect(s, Inches(6.8), Inches(y), Inches(6.05), Inches(0.7), CARD, corner=0.1)
+        _bar(s, Inches(6.8), Inches(y), Inches(0.08), Inches(0.7), col)
+        _textbox(s, Inches(7.05), Inches(y + 0.08), Inches(2.4), Inches(0.28), [(paper, 12, True, col)])
+        _textbox(s, Inches(9.5), Inches(y + 0.08), Inches(3.1), Inches(0.28), [(concept, 11, False, MUTED)])
+        _textbox(s, Inches(7.05), Inches(y + 0.36), Inches(5.5), Inches(0.28), [("→  " + ours, 12, True, WHITE)])
+
     _footer(s, 3)
 
 
@@ -404,334 +431,150 @@ def _arrow_up(slide, l, t, w=0.18, h=0.28, fill=MUTED2):
     return arr
 
 
-def _chip(slide, l, t, w, h, text, fill=CARD, line=None, size=12, bold=True, color=WHITE):
-    sh = _rect(slide, l, t, w, h, fill, corner=0.2, line=line)
-    _textbox(slide, l, t + Inches(0.08), w, h, [(text, size, bold, color)], align=PP_ALIGN.CENTER)
-    return sh
-
-
-def slide_architecture_overview(prs):
-    """Glanceable architecture: 5-step spine + 3 memory/index/optional cards. Native shapes only."""
+def slide_architecture(prs):
+    """Architecture overview + detail on ONE native-shape slide (Canva-editable)."""
     s = prs.slides.add_slide(prs.slide_layouts[6])
     _bg(s)
     _accent_rail(s)
     _section_label(s, "03  ·  Architecture")
-    _title(s, "Multi-turn loop — state is the product")
+    _title(s, "State-first multi-turn system", size=24)
     _subtitle(
         s,
-        "Each turn: past SessionState + current text → Top-10 + one ask. Catalog immutable. LLM optional / off.",
-    )
-
-    steps = [
-        ("1", "Ingest", "slots · family · audience", CYAN),
-        ("2", "Retrieve", "FTS5 + dense hash", VIOLET),
-        ("3", "Rank", "coverage · priors", GOOD),
-        ("4", "Ask", "other-first ladder", GOLD),
-        ("5", "Respond", "msg + ask + Top-10", PINK),
-    ]
-    for i, (n, h, b, col) in enumerate(steps):
-        x = 0.45 + i * 2.55
-        _rect(s, Inches(x), Inches(1.55), Inches(2.35), Inches(1.7), CARD, corner=0.12)
-        _bar(s, Inches(x), Inches(1.55), Inches(2.35), Inches(0.08), col)
-        circ = _oval(s, Inches(x + 0.15), Inches(1.75), Inches(0.42), Inches(0.42), col)
-        tf = circ.text_frame
-        tf.paragraphs[0].alignment = PP_ALIGN.CENTER
-        run = tf.paragraphs[0].add_run()
-        _set_run(run, n, size=14, bold=True, color=BG)
-        try:
-            tf.paragraphs[0].space_before = Pt(4)
-        except Exception:
-            pass
-        _textbox(s, Inches(x + 0.7), Inches(1.8), Inches(1.5), Inches(0.35), [(h, 16, True, WHITE)])
-        _textbox(s, Inches(x + 0.15), Inches(2.4), Inches(2.05), Inches(0.6), [(b, 13, False, MUTED)])
-        if i < len(steps) - 1:
-            _arrow_right(s, Inches(x + 2.38), Inches(2.25), Inches(0.16), Inches(0.22), MUTED2)
-
-    panels = [
-        (
-            0.45,
-            "SessionState  ·  mutable",
-            [
-                "soft | disclosed | override sources",
-                "family · audience · asked / filled",
-                "soft-only wipe on mind-change",
-                "next turn = same session_id",
-            ],
-            GOOD,
-        ),
-        (
-            4.6,
-            "Catalog  ·  immutable",
-            [
-                "FTS5 BM25 in-memory",
-                "dense hash 512-d default",
-                "MiniLM opt-in",
-                "50k CSJ freeze · no turn writes",
-            ],
-            VIOLET,
-        ),
-        (
-            8.75,
-            "Optional LLM  ·  gated",
-            [
-                "slots NLU + top-20 rerank",
-                "fail-open timeout → rules",
-                "NOT on default score path",
-                "tokens on default path: 0",
-            ],
-            PINK,
-        ),
-    ]
-    for x, title, lines, col in panels:
-        _rect(s, Inches(x), Inches(3.55), Inches(3.95), Inches(3.2), CARD, corner=0.1)
-        _bar(s, Inches(x), Inches(3.55), Inches(0.1), Inches(3.2), col)
-        _textbox(s, Inches(x + 0.25), Inches(3.75), Inches(3.5), Inches(0.4), [(title, 15, True, col)])
-        body = [(ln, 14, False, WHITE) for ln in lines]
-        _textbox(s, Inches(x + 0.25), Inches(4.3), Inches(3.5), Inches(2.2), body)
-
-    _footer(s, 4)
-
-
-def slide_architecture_literature(prs):
-    """Classical CRS/DST/CQ/IR as native editable shapes — no PNG."""
-    s = prs.slides.add_slide(prs.slide_layouts[6])
-    _bg(s)
-    _accent_rail(s)
-    _section_label(s, "04  ·  Architecture in the literature")
-    _title(s, "Classical CRS stack → ShopPilot modules", size=24)
-    _subtitle(
-        s,
-        "Editable shapes (not paper screenshots)  ·  Qulac · Bayesian CRS · DST · corpus CQs · hybrid IR",
+        "Native shapes only  ·  Tech 0.909 · Hit 0.975 · 0 tokens  ·  offline default",
         y=1.0,
         size=13,
     )
 
-    # A — classical pipeline
-    _textbox(s, Inches(0.5), Inches(1.35), Inches(6), Inches(0.28), [("A  ·  CLASSICAL CRS PIPELINE", 11, True, CYAN)])
-    pipe = [
-        ("User", "utterance", CYAN),
-        ("NLU", "intents+slots", GOOD),
-        ("DST", "belief state", VIOLET),
-        ("Policy", "ask/recommend", GOLD),
-        ("NLG/IR", "msg + items", PINK),
-    ]
-    for i, (h, b, col) in enumerate(pipe):
-        x = 0.5 + i * 2.45
-        _rect(s, Inches(x), Inches(1.7), Inches(2.2), Inches(0.95), CARD, corner=0.12, line=col)
-        _textbox(s, Inches(x + 0.1), Inches(1.85), Inches(2.0), Inches(0.35), [(h, 14, True, WHITE)], align=PP_ALIGN.CENTER)
-        _textbox(s, Inches(x + 0.1), Inches(2.25), Inches(2.0), Inches(0.3), [(b, 11, False, MUTED)], align=PP_ALIGN.CENTER)
-        if i < len(pipe) - 1:
-            _arrow_right(s, Inches(x + 2.22), Inches(2.05), Inches(0.2), Inches(0.22), MUTED2)
-
-    # B — DST
-    _textbox(s, Inches(0.5), Inches(2.85), Inches(12), Inches(0.28), [("B  ·  DIALOG STATE TRACKING", 11, True, VIOLET)])
-    for i, (h, b, col) in enumerate(
-        [
-            ("Utterance t", "text", CYAN),
-            ("State update", "slots · sources · wipe", GOOD),
-            ("SessionState", "soft|disclosed|override", VIOLET),
-        ]
-    ):
-        x = 0.5 + i * 4.2
-        _rect(s, Inches(x), Inches(3.2), Inches(3.9), Inches(0.85), CARD, corner=0.1, line=col)
-        _textbox(s, Inches(x + 0.15), Inches(3.3), Inches(3.6), Inches(0.3), [(h, 14, True, WHITE)])
-        _textbox(s, Inches(x + 0.15), Inches(3.65), Inches(3.6), Inches(0.3), [(b, 12, False, MUTED)])
-        if i < 2:
-            _arrow_right(s, Inches(x + 3.95), Inches(3.5), Inches(0.2), Inches(0.2), MUTED2)
-
-    # C — CQ theory vs ship
-    _textbox(s, Inches(0.5), Inches(4.25), Inches(12), Inches(0.28), [("C  ·  CLARIFYING QUESTIONS", 11, True, GOLD)])
-    _rect(s, Inches(0.5), Inches(4.55), Inches(6.0), Inches(2.15), CARD, corner=0.1, line=PINK)
-    _textbox(s, Inches(0.7), Inches(4.7), Inches(5.6), Inches(0.3), [("Theory (ablated)", 14, True, PINK)])
-    _textbox(
-        s,
-        Inches(0.7),
-        Inches(5.1),
-        Inches(5.6),
-        Inches(1.4),
-        [
-            ("max E[IG] / min H(posterior)", 13, False, WHITE),
-            ("Bayesian CRS · pool entropy", 12, False, MUTED),
-            ("brand/store splits look high-IG", 12, False, MUTED),
-            ("on THIS kit → Tech ~0.72  REJECT", 13, True, PINK),
-        ],
-    )
-    _rect(s, Inches(6.8), Inches(4.55), Inches(6.0), Inches(2.15), CARD, corner=0.1, line=GOOD)
-    _textbox(s, Inches(7.0), Inches(4.7), Inches(5.6), Inches(0.3), [("ShopPilot ship path", 14, True, GOOD)])
-    _textbox(
-        s,
-        Inches(7.0),
-        Inches(5.1),
-        Inches(5.6),
-        Inches(1.4),
-        [
-            ("other-first + static ladder", 13, False, WHITE),
-            ("skip filled / dont_care", 12, False, MUTED),
-            ("corpus facets in MESSAGE only", 12, False, MUTED),
-            ("protocol-aligned CQ · Tech ~0.91", 13, True, GOOD),
-        ],
-    )
-    _footer(s, 5)
-
-
-def slide_architecture_diagram(prs):
-    """Full system architecture as native editable shapes (Canva-friendly). No PNG."""
-    s = prs.slides.add_slide(prs.slide_layouts[6])
-    _bg(s)
-    _accent_rail(s)
-    _section_label(s, "05  ·  Architecture detail")
-    _title(s, "End-to-end system diagram", size=24)
-    _subtitle(
-        s,
-        "Native PowerPoint shapes — fully editable in Canva / Keynote / PPT  ·  Tech 0.909 · Hit 0.975 · 0 tokens",
-        y=1.0,
-        size=12,
-    )
-
     # ENTRY
-    _textbox(s, Inches(0.35), Inches(1.35), Inches(1.6), Inches(0.25), [("ENTRY", 10, True, CYAN)])
-    _rect(s, Inches(0.35), Inches(1.6), Inches(1.7), Inches(1.55), CARD2, corner=0.1, line=CYAN)
-    _textbox(s, Inches(0.45), Inches(1.75), Inches(1.5), Inches(0.55), [("CLI / Eval", 12, True, WHITE), ("reset · respond", 10, False, MUTED)], align=PP_ALIGN.CENTER)
-    _textbox(s, Inches(0.45), Inches(2.4), Inches(1.5), Inches(0.55), [("User turn t", 12, True, WHITE), ("text + session", 10, False, MUTED)], align=PP_ALIGN.CENTER)
+    _textbox(s, Inches(0.35), Inches(1.3), Inches(1.5), Inches(0.22), [("ENTRY", 10, True, CYAN)])
+    _rect(s, Inches(0.35), Inches(1.52), Inches(1.55), Inches(1.35), CARD2, corner=0.1, line=CYAN)
+    _textbox(
+        s,
+        Inches(0.4),
+        Inches(1.65),
+        Inches(1.45),
+        Inches(0.5),
+        [("CLI / Eval", 11, True, WHITE), ("reset·respond", 10, False, MUTED)],
+        align=PP_ALIGN.CENTER,
+    )
+    _textbox(
+        s,
+        Inches(0.4),
+        Inches(2.25),
+        Inches(1.45),
+        Inches(0.5),
+        [("User turn t", 11, True, WHITE), ("text+session", 10, False, MUTED)],
+        align=PP_ALIGN.CENTER,
+    )
 
-    # HOT PATH steps
-    _textbox(s, Inches(2.25), Inches(1.35), Inches(6), Inches(0.25), [("HOT PATH  ·  Agent.respond (sync)", 10, True, GOOD)])
+    # HOT PATH
+    _textbox(s, Inches(2.1), Inches(1.3), Inches(8), Inches(0.22), [("HOT PATH  ·  Agent.respond (sync)", 10, True, GOOD)])
     steps = [
-        ("1", "Ingest", "slots · family", CYAN),
-        ("2", "Retrieve", "FTS5 + dense", VIOLET),
+        ("1", "Ingest", "slots·family", CYAN),
+        ("2", "Retrieve", "FTS+dense", VIOLET),
         ("3", "Rank", "coverage", GOOD),
         ("4", "Ask", "other-first", GOLD),
-        ("5", "Respond", "Top-10 + ask", PINK),
+        ("5", "Respond", "Top-10+ask", PINK),
     ]
     step_w = 1.85
     for i, (n, h, b, col) in enumerate(steps):
-        x = 2.25 + i * (step_w + 0.22)
-        _rect(s, Inches(x), Inches(1.65), Inches(step_w), Inches(1.35), CARD, corner=0.1, line=col)
-        circ = _oval(s, Inches(x + 0.12), Inches(1.85), Inches(0.36), Inches(0.36), col)
+        x = 2.1 + i * (step_w + 0.18)
+        _rect(s, Inches(x), Inches(1.55), Inches(step_w), Inches(1.25), CARD, corner=0.1, line=col)
+        circ = _oval(s, Inches(x + 0.1), Inches(1.72), Inches(0.34), Inches(0.34), col)
         tf = circ.text_frame
         tf.paragraphs[0].alignment = PP_ALIGN.CENTER
         run = tf.paragraphs[0].add_run()
         _set_run(run, n, size=12, bold=True, color=BG)
         try:
-            tf.paragraphs[0].space_before = Pt(3)
+            tf.paragraphs[0].space_before = Pt(2)
         except Exception:
             pass
-        _textbox(s, Inches(x + 0.55), Inches(1.88), Inches(1.2), Inches(0.3), [(h, 13, True, WHITE)])
-        _textbox(s, Inches(x + 0.12), Inches(2.4), Inches(step_w - 0.2), Inches(0.4), [(b, 11, False, MUTED)])
+        _textbox(s, Inches(x + 0.5), Inches(1.75), Inches(1.25), Inches(0.28), [(h, 13, True, WHITE)])
+        _textbox(s, Inches(x + 0.1), Inches(2.2), Inches(step_w - 0.2), Inches(0.35), [(b, 11, False, MUTED)])
         if i < len(steps) - 1:
-            _arrow_right(s, Inches(x + step_w + 0.02), Inches(2.2), Inches(0.18), Inches(0.2), MUTED2)
+            _arrow_right(s, Inches(x + step_w + 0.01), Inches(2.05), Inches(0.16), Inches(0.18), MUTED2)
 
-    # entry → ingest
-    _arrow_right(s, Inches(2.05), Inches(2.2), Inches(0.18), Inches(0.2), CYAN)
+    _arrow_right(s, Inches(1.9), Inches(2.05), Inches(0.16), Inches(0.18), CYAN)
 
-    # client chip
-    _rect(s, Inches(12.0), Inches(1.95), Inches(1.05), Inches(0.7), CARD2, corner=0.15, line=PINK)
-    _textbox(s, Inches(12.0), Inches(2.1), Inches(1.05), Inches(0.45), [("→ client", 11, True, WHITE)], align=PP_ALIGN.CENTER)
-    _arrow_right(s, Inches(11.75), Inches(2.2), Inches(0.2), Inches(0.2), PINK)
+    # client
+    _rect(s, Inches(12.05), Inches(1.85), Inches(1.0), Inches(0.6), CARD2, corner=0.15, line=PINK)
+    _textbox(s, Inches(12.05), Inches(1.98), Inches(1.0), Inches(0.4), [("→ client", 11, True, WHITE)], align=PP_ALIGN.CENTER)
+    _arrow_right(s, Inches(11.82), Inches(2.05), Inches(0.18), Inches(0.18), PINK)
 
-    # write / read arrows (vertical)
-    _arrow_down(s, Inches(2.95), Inches(3.05), Inches(0.2), Inches(0.35), GOOD)
-    _textbox(s, Inches(3.2), Inches(3.1), Inches(0.6), Inches(0.25), [("write", 10, True, GOOD)])
-    _arrow_up(s, Inches(4.9), Inches(3.05), Inches(0.2), Inches(0.35), GOOD)
-    _textbox(s, Inches(5.15), Inches(3.1), Inches(0.55), Inches(0.25), [("read", 10, True, GOOD)])
+    # write/read
+    _arrow_down(s, Inches(2.8), Inches(2.9), Inches(0.18), Inches(0.3), GOOD)
+    _textbox(s, Inches(3.05), Inches(2.95), Inches(0.55), Inches(0.22), [("write", 10, True, GOOD)])
+    _arrow_up(s, Inches(4.7), Inches(2.9), Inches(0.18), Inches(0.3), GOOD)
+    _textbox(s, Inches(4.95), Inches(2.95), Inches(0.5), Inches(0.22), [("read", 10, True, GOOD)])
 
-    # BOTTOM PANELS
-    # SessionState
-    _rect(s, Inches(0.35), Inches(3.5), Inches(5.9), Inches(3.2), CARD, corner=0.1, line=GOOD)
-    _bar(s, Inches(0.35), Inches(3.5), Inches(0.1), Inches(3.2), GOOD)
-    _textbox(s, Inches(0.6), Inches(3.65), Inches(5.4), Inches(0.35), [("SessionState  ·  mutable RAM", 16, True, GOOD)])
-    _textbox(
-        s,
-        Inches(0.6),
-        Inches(4.1),
-        Inches(5.4),
-        Inches(1.8),
-        [
-            ("Slots   soft | disclosed | override · filled / asked", 13, False, WHITE),
-            ("Route   product_family · gift audience · buy/browse", 13, False, WHITE),
-            ("Clean   soft-only wipe · never re-ask filled", 13, False, WHITE),
-            ("Loop    next turn = past state + current text", 13, False, WHITE),
-        ],
-    )
-    _rect(s, Inches(0.6), Inches(5.95), Inches(5.4), Inches(0.55), CARD2, corner=0.1, line=CYAN)
-    _textbox(
-        s,
-        Inches(0.7),
-        Inches(6.05),
-        Inches(5.2),
-        Inches(0.4),
-        [('INVARIANT  t3 "black" ranks with dress+plus+black', 11, True, WHITE)],
-        align=PP_ALIGN.CENTER,
-    )
+    # THREE BOTTOM PANELS (detail)
+    panels = [
+        (
+            0.35,
+            5.9,
+            "SessionState  ·  mutable RAM",
+            [
+                "Slots  soft|disclosed|override · filled/asked",
+                "Route  family · gift audience · buy/browse",
+                "Clean  soft-only wipe · never re-ask",
+                "Loop   past state + current text",
+                'INVARIANT  t3 "black" = dress+plus+black',
+            ],
+            GOOD,
+        ),
+        (
+            6.45,
+            3.3,
+            "Catalog  ·  immutable",
+            [
+                "FTS5 BM25 in-memory",
+                "Dense hash 512-d default",
+                "MiniLM opt-in only",
+                "_products · 50k CSJ freeze",
+                "no writes at turn time",
+            ],
+            VIOLET,
+        ),
+        (
+            9.95,
+            3.05,
+            "Optional + Measure",
+            [
+                "LLM OFF · not on score path",
+                "slots NLU · rerank top-20",
+                "timeout → rules",
+                "Hit·MRR·MTTC → Tech",
+                "public 200 · guardrail",
+            ],
+            PINK,
+        ),
+    ]
+    for x, w, title, lines, col in panels:
+        _rect(s, Inches(x), Inches(3.35), Inches(w), Inches(3.35), CARD, corner=0.1, line=col)
+        _bar(s, Inches(x), Inches(3.35), Inches(0.1), Inches(3.35), col)
+        _textbox(s, Inches(x + 0.25), Inches(3.5), Inches(w - 0.4), Inches(0.35), [(title, 14, True, col)])
+        body = [(ln, 12, False, WHITE) for ln in lines]
+        _textbox(s, Inches(x + 0.25), Inches(3.95), Inches(w - 0.4), Inches(2.5), body)
 
-    # Catalog
-    _rect(s, Inches(6.45), Inches(3.5), Inches(3.3), Inches(3.2), CARD, corner=0.1, line=VIOLET)
-    _bar(s, Inches(6.45), Inches(3.5), Inches(0.1), Inches(3.2), VIOLET)
-    _textbox(s, Inches(6.7), Inches(3.65), Inches(2.9), Inches(0.35), [("Catalog  ·  immutable", 15, True, VIOLET)])
-    _textbox(
-        s,
-        Inches(6.7),
-        Inches(4.15),
-        Inches(2.9),
-        Inches(2.3),
-        [
-            ("FTS5 BM25 in-memory", 13, False, WHITE),
-            ("Dense hash 512-d default", 13, False, WHITE),
-            ("MiniLM opt-in only", 13, False, WHITE),
-            ("_products · 50k CSJ", 13, False, WHITE),
-            ("no writes at turn time", 13, False, MUTED),
-        ],
-    )
-
-    # Optional + Measure
-    _rect(s, Inches(9.95), Inches(3.5), Inches(3.05), Inches(1.7), CARD, corner=0.1, line=PINK)
-    _bar(s, Inches(9.95), Inches(3.5), Inches(0.1), Inches(1.7), PINK)
-    _textbox(s, Inches(10.2), Inches(3.6), Inches(2.65), Inches(0.3), [("Optional LLM", 14, True, PINK)])
-    _textbox(
-        s,
-        Inches(10.2),
-        Inches(3.95),
-        Inches(2.65),
-        Inches(1.1),
-        [
-            ("OFF · not on score path", 12, False, MUTED),
-            ("slots NLU · rerank top-20", 12, False, WHITE),
-            ("timeout → rules", 12, False, WHITE),
-        ],
-    )
-    _rect(s, Inches(9.95), Inches(5.4), Inches(3.05), Inches(1.3), CARD2, corner=0.1, line=MUTED2)
-    _textbox(s, Inches(10.2), Inches(5.55), Inches(2.65), Inches(0.3), [("Measure", 14, True, WHITE)])
-    _textbox(
-        s,
-        Inches(10.2),
-        Inches(5.9),
-        Inches(2.65),
-        Inches(0.7),
-        [
-            ("Hit · MRR · MTTC → Tech", 12, False, MUTED),
-            ("public 200 · guardrail", 12, False, GOLD),
-        ],
-    )
-
-    # next-turn callout (no long spaghetti arrow — Canva-editable bar)
-    _rect(s, Inches(0.35), Inches(6.8), Inches(12.65), Inches(0.32), CARD2, corner=0.15, line=CYAN)
+    # next-turn bar
+    _rect(s, Inches(0.35), Inches(6.82), Inches(12.65), Inches(0.3), CARD2, corner=0.15, line=CYAN)
     _textbox(
         s,
         Inches(0.35),
-        Inches(6.82),
+        Inches(6.84),
         Inches(12.65),
-        Inches(0.28),
-        [("next turn ↺  same session_id   ·   state write/read   ·   catalog index read-only   ·   LLM off score path", 11, True, CYAN)],
+        Inches(0.26),
+        [("next turn ↺ same session_id   ·   state write/read   ·   catalog read-only   ·   LLM off score path", 11, True, CYAN)],
         align=PP_ALIGN.CENTER,
     )
-    _footer(s, 6)
+    _footer(s, 4)
 
 
 def slide_results(prs):
     s = prs.slides.add_slide(prs.slide_layouts[6])
     _bg(s)
     _accent_rail(s)
-    _section_label(s, "06  ·  Results")
+    _section_label(s, "04  ·  Results")
     _title(s, "Public 200 — weak BM25 vs ShopPilot")
     _subtitle(s, "Official local_evaluator · SHOPPILOT_DENSE=hash · deterministic seeds")
 
@@ -785,14 +628,14 @@ def slide_results(prs):
             ("Tokens default path: 0", 13, True, GOOD),
         ],
     )
-    _footer(s, 7)
+    _footer(s, 5)
 
 
 def slide_scenarios(prs):
     s = prs.slides.add_slide(prs.slide_layouts[6])
     _bg(s)
     _accent_rail(s)
-    _section_label(s, "07  ·  By scenario")
+    _section_label(s, "05  ·  By scenario")
     _title(s, "Hit@10 holds across buying, browse, override, boundary")
     _subtitle(s, "Override pays more MTTC (mind-change cost) but still Hit 0.967")
 
@@ -827,14 +670,14 @@ def slide_scenarios(prs):
         _rect(s, Inches(8.7), y + Inches(0.65), Inches(max_w), Inches(0.14), RGBColor(0x1E, 0x2A, 0x40), corner=0.5)
         _rect(s, Inches(8.7), y + Inches(0.65), Inches(fill_w), Inches(0.14), CYAN if i % 2 == 0 else PINK, corner=0.5)
 
-    _footer(s, 8)
+    _footer(s, 6)
 
 
 def slide_demo(prs):
     s = prs.slides.add_slide(prs.slide_layouts[6])
     _bg(s)
     _accent_rail(s)
-    _section_label(s, "08  ·  Demo")
+    _section_label(s, "06  ·  Demo")
     _title(s, "Astrid CLI — live multi-turn")
     _subtitle(s, "python3 cli_chat.py --dense hash   ·   /new  /state  /quit")
 
@@ -875,14 +718,14 @@ def slide_demo(prs):
         _bar(s, Inches(8.5), y, Inches(0.08), Inches(1.5), col)
         _textbox(s, Inches(8.8), y + Inches(0.25), Inches(3.8), Inches(0.35), [(h, 15, True, col)])
         _textbox(s, Inches(8.8), y + Inches(0.7), Inches(3.8), Inches(0.6), [(b, 13, False, MUTED)])
-    _footer(s, 9)
+    _footer(s, 7)
 
 
 def slide_impact(prs):
     s = prs.slides.add_slide(prs.slide_layouts[6])
     _bg(s)
     _accent_rail(s)
-    _section_label(s, "09  ·  Impact")
+    _section_label(s, "07  ·  Impact")
     _title(s, "Kit metrics → merchant outcomes")
     _subtitle(s, "Honest framing: offline simulation ≠ live GMV A/B — same job-to-be-done as conversational commerce.")
 
@@ -899,7 +742,7 @@ def slide_impact(prs):
         _textbox(s, Inches(0.95), y + Inches(0.28), Inches(2.0), Inches(0.4), [(k, 16, True, MUTED)])
         _textbox(s, Inches(3.2), y + Inches(0.22), Inches(2.2), Inches(0.5), [(v, 26, True, col)])
         _textbox(s, Inches(5.6), y + Inches(0.3), Inches(6.8), Inches(0.45), [(note, 15, False, WHITE)])
-    _footer(s, 10)
+    _footer(s, 8)
 
 
 def slide_end(prs):
@@ -940,7 +783,7 @@ def slide_end(prs):
         x = Inches(0.9 + i * 3.5)
         _rect(s, x, Inches(5.5), Inches(3.2), Inches(0.55), CARD, corner=0.3, line=col)
         _textbox(s, x, Inches(5.57), Inches(3.2), Inches(0.4), [(lab, 13, True, WHITE)], align=PP_ALIGN.CENTER)
-    _footer(s, 11, left="TechJam 2026 Track 4")
+    _footer(s, 9, left="TechJam 2026 Track 4")
 
 
 def main() -> None:
@@ -949,10 +792,8 @@ def main() -> None:
     prs.slide_height = H
     slide_title(prs)
     slide_problem(prs)
-    slide_solution(prs)
-    slide_architecture_overview(prs)
-    slide_architecture_literature(prs)
-    slide_architecture_diagram(prs)
+    slide_solution(prs)          # solution + literature combined
+    slide_architecture(prs)      # overview + detail combined
     slide_results(prs)
     slide_scenarios(prs)
     slide_demo(prs)
@@ -967,13 +808,12 @@ def main() -> None:
     except Exception as e:
         print(f"Downloads copy skipped: {e}")
 
-    # Standalone Canva-editable architecture pack (native shapes only, no PNG)
+    # Canva-editable pack: 2 combined slides only
     arch = Presentation()
     arch.slide_width = W
     arch.slide_height = H
-    slide_architecture_overview(arch)
-    slide_architecture_literature(arch)
-    slide_architecture_diagram(arch)
+    slide_solution(arch)
+    slide_architecture(arch)
     arch_out = ROOT / "docs" / "ShopPilot_Architecture_Editable.pptx"
     arch.save(str(arch_out))
     arch_dl = Path.home() / "Downloads" / "ShopPilot_Architecture_Editable.pptx"
@@ -987,6 +827,7 @@ def main() -> None:
     print(f"WROTE {OUT}")
     print(f"slides={len(prs.slides)} arch_pack={len(arch.slides)}")
     print(f"metrics tech={OURS['tech']} hit={OURS['hit']} mrr={OURS['mrr']} mttc={OURS['mttc']}")
+
 
 
 if __name__ == "__main__":

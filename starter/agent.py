@@ -109,6 +109,12 @@ EVIDENCE_COVERAGE_W = 12.0
 EVIDENCE_EXACT_W = 14.0
 EVIDENCE_MATCH_W = 0.35
 EVIDENCE_INDEX_STEP = 0.18
+# Disclosed/override can outweigh soft (default 1.0 = flat; 2.0 hurt MRR on public).
+EVIDENCE_DISCLOSED_MULT = 1.0
+EVIDENCE_SOFT_MULT = 1.0
+# Title pin (default off — public A/B dropped Tech ~0.006).
+EVIDENCE_TITLE_EXACT = 6.0
+EVIDENCE_TITLE_COVERAGE = 2.0
 # Clarifying-question policy (public-set A/B):
 #   other-first + static ASK_ORDER  → Tech 0.753 baseline stack
 #   pure max pool info-gain         → Tech 0.720  (REJECT)
@@ -1399,23 +1405,39 @@ class Agent:
         state: SessionState,
         phrases: list[str],
     ) -> float:
-        """Unknownflow-style: weight * (coverage*12 + exact*14 + |matched|*0.35)."""
+        """Per-constraint coverage + exact match; disclosed weighted higher; title pin."""
+        if os.environ.get("SHOPPILOT_EVIDENCE_RANK", "1") == "0":
+            return 0.0
         full = (product.get("text") or "").lower()
+        title = (product.get("title") or "").lower()
         if not full:
             return 0.0
         doc_tokens = set(_terms(full))
-        # Prefer disclosed constraints ordered; else all session constraints.
-        ordered: list[tuple[str, str | None]] = []  # (phrase, kind)
+        title_tokens = set(_terms(title))
+
+        try:
+            disc_m = float(os.environ.get("SHOPPILOT_DISC_MULT", str(EVIDENCE_DISCLOSED_MULT)))
+        except ValueError:
+            disc_m = EVIDENCE_DISCLOSED_MULT
+        try:
+            soft_m = float(os.environ.get("SHOPPILOT_SOFT_MULT", str(EVIDENCE_SOFT_MULT)))
+        except ValueError:
+            soft_m = EVIDENCE_SOFT_MULT
+        title_on = os.environ.get("SHOPPILOT_TITLE_EXACT", "0") == "1"
+
+        ordered: list[tuple[str, str | None, str]] = []  # phrase, kind, source
         for i, c in enumerate(state.constraints):
             src = state.constraint_sources[i] if i < len(state.constraint_sources) else "soft"
             kind = classify_constraint(c)
-            ordered.append((c, kind if src else kind))
-        if not ordered and state.category:
-            ordered.append((state.category, "category"))
-        # If only soft phrases in `phrases` beyond constraints, skip extras
-        # already covered.
+            ordered.append((c, kind, src or "soft"))
+        if state.category:
+            # Category as evidence only when nothing else yet (avoid double-count).
+            cat = state.category.strip()
+            if cat and not ordered:
+                ordered.append((cat, "category", "disclosed"))
+
         score = 0.0
-        for index, (constraint, slot_kind) in enumerate(ordered):
+        for index, (constraint, slot_kind, src) in enumerate(ordered):
             scoring_terms = _terms(constraint)
             if slot_kind == "color":
                 scoring_terms = [t for t in scoring_terms if t != "color"]
@@ -1435,14 +1457,26 @@ class Agent:
                 if slot_kind == "category"
                 else (normalized in full)
             ) else 0.0
-            weight = 1.0 + index * EVIDENCE_INDEX_STEP
+
+            src_mult = disc_m if src in {"disclosed", "override"} else soft_m
+            weight = (1.0 + index * EVIDENCE_INDEX_STEP) * src_mult
             score += weight * (
                 coverage * EVIDENCE_COVERAGE_W
                 + exact * EVIDENCE_EXACT_W
                 + len(matched) * EVIDENCE_MATCH_W
             )
             if canonical_category:
-                score += CATEGORY_TAIL_EXACT_BONUS * 0.5  # half here; full still via tail bonus
+                score += CATEGORY_TAIL_EXACT_BONUS * 0.5 * src_mult
+
+            if title_on and title:
+                if normalized and normalized in title:
+                    score += EVIDENCE_TITLE_EXACT * src_mult
+                else:
+                    t_hit = query & title_tokens
+                    if query and t_hit == query:
+                        score += EVIDENCE_TITLE_EXACT * 0.75 * src_mult
+                    elif query and len(t_hit) / len(query) >= 0.5:
+                        score += EVIDENCE_TITLE_COVERAGE * src_mult * (len(t_hit) / len(query))
         return score
 
     def _exact_combo_bonus(

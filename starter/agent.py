@@ -122,9 +122,6 @@ EVIDENCE_TITLE_COVERAGE = 2.0
 # Public A/B: gap=10 with FORCE_TOP10_TURN=4 → Tech 0.9081 → 0.9091 (MRR +0.012).
 # 0 disables margin mode and uses fixed PRECISION_TURNS only.
 PRECISION_GAP_DEFAULT = 10.0
-# Medium band: emit Top-MID_K when mid_gap <= margin < high gap (0 mid_gap = off).
-PRECISION_MID_GAP_DEFAULT = 0.0
-PRECISION_MID_K_DEFAULT = 3
 # Soft demote when a disclosed multi-token phrase is fully absent (0 = off).
 SOFT_MISS_PENALTY_DEFAULT = 0.0
 # Bonus when product fully covers all multi-token disclosed constraints.
@@ -963,50 +960,11 @@ class Agent:
 
         # --- Margin-gated mode (experimental) ---
         if gap > 0:
-            try:
-                mid_gap = float(
-                    os.environ.get("SHOPPILOT_MID_GAP", str(PRECISION_MID_GAP_DEFAULT))
-                )
-            except ValueError:
-                mid_gap = PRECISION_MID_GAP_DEFAULT
-            try:
-                mid_k = max(
-                    1,
-                    int(os.environ.get("SHOPPILOT_MID_K", str(PRECISION_MID_K_DEFAULT))),
-                )
-            except ValueError:
-                mid_k = PRECISION_MID_K_DEFAULT
-            mid_k = min(mid_k, top_k)
-
-            # Peer-style: if user declined broad `other`, keep one extra precision turn
-            # (distinguishing facts arrive one turn later).
-            delayed = False
-            if os.environ.get("SHOPPILOT_DELAYED_OTHER", "0") == "1":
-                if "other" in state.dont_care and turn <= max(max_turn, 3):
-                    delayed = True
-
-            override_turn = bool(
-                state.messages and OVERRIDE_RE.search(state.messages[-1] or "")
-            )
-            if override_turn or delayed:
-                # Still allow widen if extremely confident
-                if margin is not None and margin >= gap * 1.5 and not override_turn:
-                    return top_k
-                return 1
-
             # High conviction → full Top-10 even on turn 1 (MTTC win).
-            if margin is not None and margin >= gap and (
-                rich or turn >= 2 or len(state.constraints) >= 1
-            ):
+            if margin is not None and margin >= gap and (rich or turn >= 2 or len(state.constraints) >= 1):
+                if state.messages and OVERRIDE_RE.search(state.messages[-1] or ""):
+                    return 1  # override turn still cautious
                 return top_k
-            # Medium conviction → Top-3/5 catch rank-2/3 without full Top-10 risk.
-            if (
-                mid_gap > 0
-                and margin is not None
-                and margin >= mid_gap
-                and (rich or turn >= 2 or len(state.constraints) >= 1)
-            ):
-                return mid_k
             # Low conviction → Top-1 to protect MRR and keep asking.
             if turn <= max_turn:
                 return 1
@@ -1691,18 +1649,6 @@ class Agent:
             )
             if canonical_category:
                 score += CATEGORY_TAIL_EXACT_BONUS * 0.5 * src_mult
-            # Peer-style: multi-token exact hits in catalog blob get an extra bump
-            # (features/details often hold the simulator's disclosed strings).
-            elif (
-                os.environ.get("SHOPPILOT_FEAT_EXACT", "0") == "1"
-                and exact > 0
-                and len(query) > 1
-            ):
-                try:
-                    feat_b = float(os.environ.get("SHOPPILOT_FEAT_EXACT_BONUS", "6.0"))
-                except ValueError:
-                    feat_b = 6.0
-                score += feat_b * weight
 
             if title_on and title:
                 if normalized and normalized in title:

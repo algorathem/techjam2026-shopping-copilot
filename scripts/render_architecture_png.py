@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
-"""Slide-ready ShopPilot architecture diagram — simple + comprehensive.
+"""Slide-ready ShopPilot architecture diagram — clean arrows, no legend.
 
-Glanceable spine: Entry → 5 steps → Response
-Bottom: SessionState | Catalog | Optional (dim)
-Few arrows, short labels, Astrid cyan/pink palette.
+Layout:
+  Header
+  ENTRY | 1 Ingest → 2 Retrieve → 3 Rank → 4 Ask → 5 Respond → client
+  SessionState (wide) | Catalog | Optional LLM + Measure
+  next-turn loop under panels (orthogonal only)
+
+No color legend / primitives footer (wordy). Labels sit on arrows.
 """
 from __future__ import annotations
 
@@ -51,206 +55,241 @@ def rr(d, box, fill=CARD, outline=None, width=2, radius=16):
     d.rounded_rectangle(box, radius=radius, fill=fill, outline=outline, width=width)
 
 
-def arrow(d, a, b, col=MUTED2, w=5, dash=False, head=16):
-    x1, y1 = a
-    x2, y2 = b
-    if dash:
-        length = math.hypot(x2 - x1, y2 - y1) or 1
-        n = max(int(length // 14), 1)
-        for i in range(0, n, 2):
-            t0, t1 = i / n, min((i + 1) / n, 1.0)
-            d.line(
-                [
-                    (x1 + (x2 - x1) * t0, y1 + (y2 - y1) * t0),
-                    (x1 + (x2 - x1) * t1, y1 + (y2 - y1) * t1),
-                ],
-                fill=col,
-                width=w,
-            )
-    else:
-        d.line([a, b], fill=col, width=w)
-    ang = math.atan2(y2 - y1, x2 - x1)
-    for off in (2.4, -2.4):
-        d.line(
-            [b, (x2 + head * math.cos(ang + off), y2 + head * math.sin(ang + off))],
-            fill=col,
-            width=w,
-        )
+def arrow_head(d, tip, direction, col, w=4, size=14):
+    """direction: 'up'|'down'|'left'|'right'."""
+    x, y = tip
+    if direction == "right":
+        pts = [(x, y), (x - size, y - size * 0.55), (x - size, y + size * 0.55)]
+    elif direction == "left":
+        pts = [(x, y), (x + size, y - size * 0.55), (x + size, y + size * 0.55)]
+    elif direction == "down":
+        pts = [(x, y), (x - size * 0.55, y - size), (x + size * 0.55, y - size)]
+    else:  # up
+        pts = [(x, y), (x - size * 0.55, y + size), (x + size * 0.55, y + size)]
+    d.polygon(pts, fill=col)
+
+
+def hline(d, x1, x2, y, col, w=4):
+    d.line([(x1, y), (x2, y)], fill=col, width=w)
+
+
+def vline(d, x, y1, y2, col, w=4):
+    d.line([(x, y1), (x, y2)], fill=col, width=w)
 
 
 def step(d, x, y, w, h, n, title, sub, col):
-    rr(d, (x, y, x + w, y + h), fill=CARD, outline=col, width=3, radius=20)
-    # number
-    r = 22
-    cx, cy = x + 32, y + h // 2
+    rr(d, (x, y, x + w, y + h), fill=CARD, outline=col, width=3, radius=18)
+    r = 20
+    cx, cy = x + 30, y + h // 2
     d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=col)
-    t(d, (cx, cy), str(n), 18, BG, True, "mm")
-    t(d, (x + 70, y + h // 2 - 16), title, 22, WHITE, True, "lt")
-    t(d, (x + 70, y + h // 2 + 14), sub, 15, MUTED, False, "lt")
+    t(d, (cx, cy), str(n), 17, BG, True, "mm")
+    t(d, (x + 62, y + h // 2 - 14), title, 20, WHITE, True, "lt")
+    t(d, (x + 62, y + h // 2 + 12), sub, 14, MUTED, False, "lt")
 
 
 def render_png() -> Path:
     img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
 
-    # soft atmosphere
-    d.ellipse((1550, -200, 2150, 450), fill=(28, 12, 40))
-    d.ellipse((-200, 750, 450, 1200), fill=(12, 40, 52))
+    # atmosphere
+    d.ellipse((1550, -180, 2150, 420), fill=(28, 12, 40))
+    d.ellipse((-180, 820, 400, 1200), fill=(12, 40, 52))
 
-    # header (compact — slides may crop; keep readable standalone)
-    t(d, (56, 28), "SHOPPILOT  ·  ARCHITECTURE", 12, PINK, True, "lt")
-    t(d, (56, 52), "State-first multi-turn agent", 30, WHITE, True, "lt")
-    t(d, (56, 94), "offline · hybrid FTS+dense · one ask · ≤10 turns", 15, MUTED, False, "lt")
-    for i, (lab, col) in enumerate([("0.907 Tech", CYAN), ("0.975 Hit", PINK), ("0 tok", GOOD)]):
-        x0 = 1480 + i * 140
-        rr(d, (x0, 48, x0 + 128, 92), fill=CARD, outline=col, width=2, radius=16)
-        t(d, (x0 + 64, 70), lab, 14, WHITE, True, "mm")
+    # ── HEADER ───────────────────────────────────────────────────────────
+    t(d, (48, 24), "SHOPPILOT  ·  ARCHITECTURE", 12, PINK, True, "lt")
+    t(d, (48, 48), "State-first multi-turn agent", 28, WHITE, True, "lt")
+    t(d, (48, 86), "offline · hybrid FTS+dense · one ask · ≤10 turns", 14, MUTED, False, "lt")
+    for i, (lab, col) in enumerate([("Tech 0.909", CYAN), ("Hit 0.975", PINK), ("0 tokens", GOOD)]):
+        x0 = 1490 + i * 135
+        rr(d, (x0, 40, x0 + 125, 84), fill=CARD, outline=col, width=2, radius=14)
+        t(d, (x0 + 62, 62), lab, 13, WHITE, True, "mm")
+
+    # ── GEOMETRY ─────────────────────────────────────────────────────────
+    # Hot path row
+    entry_x, entry_y, entry_w, entry_h = 48, 130, 200, 200
+    sy, sw, sh = 145, 235, 120  # step y/w/h
+    steps_x = [280, 545, 810, 1075, 1340]  # 1..5
+    gap = 30  # between steps for arrows
+    client_x, client_y = 1700, 175
+
+    # Bottom panels (more height — no legend)
+    by = 360
+    bh = 620  # bottom of panels
+    # SessionState | Catalog | Optional+Measure
+    state_box = (48, by, 880, bh)
+    cat_box = (910, by, 1360, bh)
+    opt_box = (1390, by, 1872, 520)
+    meas_box = (1390, 545, 1872, bh)
 
     # ── ENTRY ────────────────────────────────────────────────────────────
-    t(d, (56, 140), "ENTRY", 12, CYAN, True, "lt")
-    rr(d, (56, 162, 250, 360), fill=CARD2, outline=CYAN, width=3, radius=18)
-    rr(d, (76, 190, 230, 250), fill=CARD, outline=CYAN, width=2, radius=14)
-    t(d, (153, 208), "CLI / Eval", 17, WHITE, True, "mm")
-    t(d, (153, 232), "reset · respond", 13, MUTED, False, "mm")
-    rr(d, (76, 270, 230, 330), fill=CARD, outline=CYAN, width=2, radius=14)
-    t(d, (153, 288), "User turn t", 17, WHITE, True, "mm")
-    t(d, (153, 312), "text + session", 13, MUTED, False, "mm")
+    t(d, (48, 112), "ENTRY", 11, CYAN, True, "lt")
+    rr(d, (entry_x, entry_y, entry_x + entry_w, entry_y + entry_h), CARD2, CYAN, 3, 16)
+    rr(d, (entry_x + 16, entry_y + 24, entry_x + entry_w - 16, entry_y + 90), CARD, CYAN, 2, 12)
+    t(d, (entry_x + entry_w / 2, entry_y + 48), "CLI / Eval", 15, WHITE, True, "mm")
+    t(d, (entry_x + entry_w / 2, entry_y + 72), "reset · respond", 12, MUTED, False, "mm")
+    rr(d, (entry_x + 16, entry_y + 110, entry_x + entry_w - 16, entry_y + 176), CARD, CYAN, 2, 12)
+    t(d, (entry_x + entry_w / 2, entry_y + 134), "User turn t", 15, WHITE, True, "mm")
+    t(d, (entry_x + entry_w / 2, entry_y + 158), "text + session_id", 12, MUTED, False, "mm")
 
     # ── HOT PATH ─────────────────────────────────────────────────────────
-    t(d, (290, 140), "HOT PATH  ·  Agent.respond (sync)", 12, GOOD, True, "lt")
+    t(d, (280, 112), "HOT PATH  ·  Agent.respond (sync)", 11, GOOD, True, "lt")
     steps = [
-        (280, 1, "Ingest", "slots · family · override", CYAN),
-        (560, 2, "Retrieve", "FTS5 + dense hash", VIOLET),
-        (840, 3, "Rank", "coverage · priors", GOOD),
-        (1120, 4, "Ask", "other-first ladder", GOLD),
-        (1400, 5, "Respond", "msg + ask + Top-10", PINK),
+        (1, "Ingest", "slots · family · override", CYAN),
+        (2, "Retrieve", "FTS5 + dense hash", VIOLET),
+        (3, "Rank", "coverage · priors", GOOD),
+        (4, "Ask", "other-first ladder", GOLD),
+        (5, "Respond", "msg + ask + Top-10", PINK),
     ]
-    sy, sw, sh = 162, 250, 140
-    for x, n, title, sub, col in steps:
+    for x, (n, title, sub, col) in zip(steps_x, steps):
         step(d, x, sy, sw, sh, n, title, sub, col)
-    # chain
-    mid_y = sy + sh // 2
-    for x in (530, 810, 1090, 1370):
-        arrow(d, (x, mid_y), (x + 28, mid_y), MUTED, 5)
-    # entry → ingest
-    arrow(d, (250, 300), (280, mid_y), CYAN, 5)
 
-    # out chip
-    rr(d, (1680, 200, 1864, 270), fill=CARD2, outline=PINK, width=2, radius=14)
-    t(d, (1772, 235), "→ client", 16, WHITE, True, "mm")
-    arrow(d, (1650, mid_y), (1680, 235), PINK, 4)
+    # horizontal chain arrows between steps (short, centered)
+    mid_y = sy + sh // 2
+    for i in range(4):
+        x1 = steps_x[i] + sw
+        x2 = steps_x[i + 1]
+        hline(d, x1 + 4, x2 - 4, mid_y, MUTED, 4)
+        arrow_head(d, (x2 - 2, mid_y), "right", MUTED, size=12)
+
+    # entry → ingest (horizontal from entry right mid to step1 left)
+    ey = entry_y + entry_h // 2 + 20
+    hline(d, entry_x + entry_w, steps_x[0] - 2, ey, CYAN, 4)
+    # small vertical adjust into step mid if needed
+    if abs(ey - mid_y) > 2:
+        vline(d, steps_x[0] - 8, ey, mid_y, CYAN, 4)
+        hline(d, steps_x[0] - 8, steps_x[0] - 2, mid_y, CYAN, 4)
+    arrow_head(d, (steps_x[0] - 2, mid_y), "right", CYAN, size=12)
+
+    # client chip
+    rr(d, (client_x, client_y, 1872, client_y + 60), CARD2, PINK, 2, 12)
+    t(d, ((client_x + 1872) / 2, client_y + 30), "→ client", 15, WHITE, True, "mm")
+    hline(d, steps_x[4] + sw + 2, client_x - 2, mid_y, PINK, 4)
+    vline(d, client_x - 8, mid_y, client_y + 30, PINK, 4)
+    hline(d, client_x - 8, client_x - 2, client_y + 30, PINK, 4)
+    arrow_head(d, (client_x - 2, client_y + 30), "right", PINK, size=12)
 
     # ── BOTTOM PANELS ────────────────────────────────────────────────────
-    by = 380
     # SessionState
-    rr(d, (56, by, 900, 820), fill=CARD, outline=GOOD, width=3, radius=20)
-    d.rectangle((56, by, 72, 820), fill=GOOD)
-    t(d, (100, by + 30), "SessionState", 26, GOOD, True, "lt")
-    t(d, (100, by + 68), "mutable dialogue memory  ·  RAM only", 15, MUTED, False, "lt")
-    state_lines = [
-        ("Slots", "soft | disclosed | override   ·   filled / asked / dont_care"),
-        ("Route", "product_family  ·  gift audience  ·  buy / browse"),
-        ("Clean", "soft-only wipe on override  ·  never re-ask filled"),
-        ("Loop", "next turn = past state + current text  (same session_id)"),
+    rr(d, state_box, CARD, GOOD, 3, 18)
+    d.rectangle((state_box[0], state_box[1], state_box[0] + 10, state_box[3]), fill=GOOD)
+    t(d, (state_box[0] + 28, state_box[1] + 22), "SessionState", 24, GOOD, True, "lt")
+    t(d, (state_box[0] + 28, state_box[1] + 54), "mutable dialogue memory · RAM", 14, MUTED, False, "lt")
+    rows = [
+        ("Slots", "soft | disclosed | override · filled / asked / dont_care", CYAN),
+        ("Route", "product_family · gift audience · buy / browse", CYAN),
+        ("Clean", "soft-only wipe on override · never re-ask filled", PINK),
+        ("Loop", "next turn = past state + current text (same session_id)", GOOD),
     ]
-    yy = by + 115
-    for k, v in state_lines:
-        col = CYAN if k in ("Slots", "Route") else (PINK if k == "Clean" else GOOD)
-        t(d, (100, yy), k, 17, col, True, "lt")
-        t(d, (200, yy), v, 16, WHITE, False, "lt")
-        yy += 44
-    # invariant strip
-    rr(d, (90, 740, 860, 800), fill=CARD2, outline=CYAN, width=2, radius=12)
-    t(d, (475, 770), 't3 "black" ranks with dress + plus + black — not alone', 15, WHITE, True, "mm")
+    yy = state_box[1] + 100
+    for k, v, col in rows:
+        t(d, (state_box[0] + 28, yy), k, 16, col, True, "lt")
+        t(d, (state_box[0] + 120, yy), v, 15, WHITE, False, "lt")
+        yy += 42
+    # invariant chip
+    rr(d, (state_box[0] + 28, state_box[3] - 70, state_box[2] - 28, state_box[3] - 24), CARD2, CYAN, 2, 10)
+    t(
+        d,
+        ((state_box[0] + state_box[2]) / 2, state_box[3] - 47),
+        't3 "black" ranks with dress + plus + black — not alone',
+        14,
+        WHITE,
+        True,
+        "mm",
+    )
 
     # Catalog
-    rr(d, (930, by, 1400, 820), fill=CARD, outline=VIOLET, width=3, radius=20)
-    d.rectangle((930, by, 946, 820), fill=VIOLET)
-    t(d, (970, by + 28), "Catalog index", 22, VIOLET, True, "lt")
-    t(d, (970, by + 62), "immutable after load", 15, MUTED, False, "lt")
+    rr(d, cat_box, CARD, VIOLET, 3, 18)
+    d.rectangle((cat_box[0], cat_box[1], cat_box[0] + 10, cat_box[3]), fill=VIOLET)
+    t(d, (cat_box[0] + 28, cat_box[1] + 22), "Catalog index", 22, VIOLET, True, "lt")
+    t(d, (cat_box[0] + 28, cat_box[1] + 54), "immutable after load", 14, MUTED, False, "lt")
     for i, line in enumerate(
         [
-            "FTS5 BM25  ·  in-memory",
-            "Dense hash 512-d  (default)",
-            "MiniLM  ·  opt-in only",
-            "_products[asin]  ·  50k CSJ",
+            "FTS5 BM25 · in-memory",
+            "Dense hash 512-d (default)",
+            "MiniLM · opt-in only",
+            "_products[asin] · 50k CSJ",
             "no writes at turn time",
         ]
     ):
-        t(d, (970, by + 120 + i * 40), "·  " + line, 17, WHITE, False, "lt")
+        t(d, (cat_box[0] + 28, cat_box[1] + 110 + i * 40), "·  " + line, 16, WHITE, False, "lt")
 
-    # Optional + measure
-    rr(d, (1430, by, 1864, 600), fill=(42, 18, 32), outline=PINK, width=3, radius=20)
-    d.rectangle((1430, by, 1446, 600), fill=PINK)
-    t(d, (1470, by + 28), "Optional LLM", 20, PINK, True, "lt")
-    t(d, (1470, by + 60), "gated · fail-open · OFF by default", 14, MUTED, False, "lt")
-    for i, line in enumerate(
-        [
-            "slots NLU (lowconf)",
-            "rerank top-20",
-            "timeout → rules",
-            "not on score path",
-        ]
-    ):
-        t(d, (1470, by + 110 + i * 34), "·  " + line, 16, WHITE, False, "lt")
+    # Optional LLM
+    rr(d, opt_box, (42, 18, 32), PINK, 3, 16)
+    d.rectangle((opt_box[0], opt_box[1], opt_box[0] + 10, opt_box[3]), fill=PINK)
+    t(d, (opt_box[0] + 28, opt_box[1] + 20), "Optional LLM", 18, PINK, True, "lt")
+    t(d, (opt_box[0] + 28, opt_box[1] + 48), "OFF by default · not on score path", 13, MUTED, False, "lt")
+    for i, line in enumerate(["slots NLU (lowconf)", "rerank top-20", "timeout → rules"]):
+        t(d, (opt_box[0] + 28, opt_box[1] + 88 + i * 32), "·  " + line, 15, WHITE, False, "lt")
 
-    rr(d, (1430, 630, 1864, 820), fill=CARD2, outline=MUTED2, width=2, radius=18)
-    t(d, (1470, 660), "Measure", 18, WHITE, True, "lt")
-    t(d, (1470, 700), "local_evaluator", 16, MUTED, False, "lt")
-    t(d, (1470, 740), "Hit · MRR · MTTC → Tech", 16, WHITE, False, "lt")
-    t(d, (1470, 780), "public 200  ·  ship guardrail", 15, GOLD, False, "lt")
+    # Measure
+    rr(d, meas_box, CARD2, MUTED2, 2, 16)
+    t(d, (meas_box[0] + 28, meas_box[1] + 22), "Measure", 18, WHITE, True, "lt")
+    t(d, (meas_box[0] + 28, meas_box[1] + 55), "local_evaluator", 14, MUTED, False, "lt")
+    t(d, (meas_box[0] + 28, meas_box[1] + 90), "Hit · MRR · MTTC → Tech", 15, WHITE, False, "lt")
+    t(d, (meas_box[0] + 28, meas_box[1] + 125), "public 200 · ship guardrail", 14, GOLD, False, "lt")
 
-    # ── FEW CLEAN ARROWS ─────────────────────────────────────────────────
-    # write: center of step1 bottom → state top
-    arrow(d, (405, 302), (405, 380), GOOD, 5)
-    t(d, (420, 335), "write", 14, GOOD, True, "lt")
+    # ── ORTHOGONAL ARROWS ONLY (no diagonals) ────────────────────────────
+    # Channel between hot path and panels: y = 320
+    chan = 320
 
-    # read: state top → step2 bottom (short vertical-ish from right of state header)
-    arrow(d, (700, 380), (685, 302), GOOD, 5)
-    t(d, (720, 335), "read", 14, GOOD, True, "lt")
+    # 1) write: Ingest bottom center → down to channel → down into SessionState top
+    ix = steps_x[0] + sw // 2  # center of Ingest
+    vline(d, ix, sy + sh, chan, GOOD, 4)
+    # continue into state top (state top is by)
+    vline(d, ix, chan, by, GOOD, 4)
+    arrow_head(d, (ix, by - 1), "down", GOOD, size=12)
+    t(d, (ix + 12, (sy + sh + chan) // 2), "write", 13, GOOD, True, "lt")
 
-    # catalog up to retrieve — short, from catalog top-left
-    arrow(d, (1100, 380), (720, 302), VIOLET, 4)
-    t(d, (900, 330), "index", 13, VIOLET, True, "lt")
+    # 2) read: from SessionState top (right of write) up to Retrieve
+    rx = steps_x[1] + sw // 2  # Retrieve center
+    # start just inside state top edge, go up to channel, then up to retrieve
+    vline(d, rx, by, chan, GOOD, 4)
+    vline(d, rx, chan, sy + sh, GOOD, 4)
+    arrow_head(d, (rx, sy + sh + 1), "up", GOOD, size=12)
+    t(d, (rx + 12, (chan + sy + sh) // 2), "read", 13, GOOD, True, "lt")
 
-    # ask policy from state — gold dashed, short arc-ish from right of state
-    arrow(d, (880, 420), (1245, 302), GOLD, 3, dash=True)
-    t(d, (1020, 355), "filled?", 13, GOLD, True, "lt")
+    # 3) catalog → Retrieve: vertical from catalog top center up to channel, then left/right to rx
+    cx = (cat_box[0] + cat_box[2]) // 2
+    vline(d, cx, by, chan, VIOLET, 4)
+    # horizontal along channel from cx to rx
+    if cx > rx:
+        hline(d, rx, cx, chan, VIOLET, 4)
+    else:
+        hline(d, cx, rx, chan, VIOLET, 4)
+    # already have vertical into retrieve at rx — share the read column:
+    # small stub: channel already connects; arrow into retrieve is the read arrow.
+    # Add label on channel
+    t(d, ((rx + cx) // 2, chan - 16), "index", 12, VIOLET, True, "mm")
 
-    # next-turn loop BELOW everything (no cross through middle)
-    loop_y = 860
-    d.line([(1772, 270), (1772, loop_y)], fill=CYAN, width=4)
-    d.line([(1772, loop_y), (153, loop_y)], fill=CYAN, width=4)
-    arrow(d, (153, loop_y), (153, 330), CYAN, 5)
-    t(d, (960, 890), "next turn  ↺  same session_id", 18, CYAN, True, "mm")
+    # 4) ask policy from state → Ask: orthogonal
+    # from right edge of SessionState at mid-panel height, right along a mid rail, up to Ask
+    ask_x = steps_x[3] + sw // 2
+    rail_y = by + 40  # just under panel top, inside? better outside between
+    # Use channel-adjacent lower rail at y = chan is crowded; use y = by - 8 area already used.
+    # Path: state right border mid → right to ask_x → up to step bottom
+    state_right = state_box[2]
+    state_mid_y = by + 30
+    # exit right from state near top
+    hline(d, state_right, ask_x, state_mid_y, GOLD, 3)
+    vline(d, ask_x, state_mid_y, sy + sh, GOLD, 3)
+    arrow_head(d, (ask_x, sy + sh + 1), "up", GOLD, size=11)
+    t(d, (state_right + 40, state_mid_y - 16), "filled / asked", 12, GOLD, True, "lt")
 
-    # optional stub (one short dashed) — from LLM left to rank area, high and short
-    # keep VERY short so it doesn't spaghetti: just a label near LLM
-    t(d, (1647, 365), "dashed pink = optional", 12, PINK, False, "mm")
+    # 5) next-turn loop: orthogonal under everything
+    loop_y = 1000
+    # from client bottom center down
+    clx = (client_x + 1872) // 2
+    vline(d, clx, client_y + 60, loop_y, CYAN, 4)
+    # left across bottom
+    entry_cx = entry_x + entry_w // 2
+    hline(d, entry_cx, clx, loop_y, CYAN, 4)
+    # up into entry bottom
+    vline(d, entry_cx, loop_y, entry_y + entry_h, CYAN, 4)
+    arrow_head(d, (entry_cx, entry_y + entry_h + 1), "up", CYAN, size=12)
+    t(d, (W // 2, loop_y - 22), "next turn  ·  same session_id", 16, CYAN, True, "mm")
 
-    # ── FOOTER legend (thin) ─────────────────────────────────────────────
-    rr(d, (56, 930, 1864, 1048), fill=CARD, outline=LINE, width=1, radius=14)
-    items = [
-        (CYAN, "cyan", "I/O + next turn"),
-        (GOOD, "green", "state write/read"),
-        (VIOLET, "violet", "catalog"),
-        (GOLD, "gold dash", "ask from state"),
-        (PINK, "pink", "optional LLM"),
-    ]
-    x = 80
-    for col, name, desc in items:
-        d.ellipse((x, 970, x + 14, 984), fill=col)
-        t(d, (x + 24, 977), f"{name}  {desc}", 14, MUTED, False, "lm")
-        x += 340
-    t(
-        d,
-        (80, 1015),
-        "Primitives:  SessionState · Agent · FTS5+Dense · _products  ·  {message, ask_attribute, Top-10}",
-        14,
-        MUTED2,
-        False,
-        "lt",
-    )
+    # Optional: no arrow into hot path (avoids spaghetti). Dim caption only.
+    t(d, ((opt_box[0] + opt_box[2]) / 2, opt_box[3] - 18), "no arrow on score path", 12, MUTED2, False, "mm")
 
     OUT_PNG.parent.mkdir(parents=True, exist_ok=True)
     img.save(OUT_PNG, "PNG", optimize=True)
@@ -269,7 +308,7 @@ img{width:100%;border-radius:12px;border:1px solid #2a3a55}
 </style></head>
 <body>
 <h1>ShopPilot · System Architecture</h1>
-<p class="sub">Rebuild: python3 scripts/render_architecture_png.py</p>
+<p class="sub">Rebuild: python3 scripts/render_architecture_png.py · no legend · orthogonal arrows</p>
 <img src="architecture_diagram.png" alt="architecture"/>
 </body></html>
 """,

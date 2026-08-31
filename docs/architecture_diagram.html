@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ShopPilot — Architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #020617;
+    --card: #0f172a;
+    --grid: #1e293b;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --cyan: #22d3ee;
+    --emerald: #34d399;
+    --violet: #a78bfa;
+    --amber: #fbbf24;
+    --rose: #fb7185;
+    --orange: #fb923c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 28px 24px 48px;
+  }
+  .header {
+    max-width: 1100px;
+    margin: 0 auto 18px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--emerald);
+    box-shadow: 0 0 0 0 rgba(52,211,153,.7);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(52,211,153,.55); }
+    70% { box-shadow: 0 0 0 10px rgba(52,211,153,0); }
+    100% { box-shadow: 0 0 0 0 rgba(52,211,153,0); }
+  }
+  h1 { font-size: 18px; margin: 0; font-weight: 700; letter-spacing: .02em; }
+  .sub { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .frame {
+    max-width: 1100px;
+    margin: 0 auto;
+    background: linear-gradient(180deg, #0b1220, #070b14);
+    border: 1px solid #1e293b;
+    border-radius: 14px;
+    padding: 16px;
+    overflow: auto;
+  }
+  svg { display: block; width: 100%; height: auto; }
+  .cards {
+    max-width: 1100px;
+    margin: 18px auto 0;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+  .card {
+    background: #0f172a;
+    border: 1px solid #1e293b;
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .card-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .card-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .card-dot.cyan { background: var(--cyan); }
+  .card-dot.emerald { background: var(--emerald); }
+  .card-dot.violet { background: var(--violet); }
+  .card h3 { margin: 0; font-size: 12px; font-weight: 600; }
+  .card ul { margin: 0; padding: 0; list-style: none; color: var(--muted); font-size: 11px; line-height: 1.55; }
+  .footer {
+    max-width: 1100px; margin: 16px auto 0;
+    color: #64748b; font-size: 10px;
+  }
+  @media (max-width: 800px) {
+    .cards { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div class="dot"></div>
+    <div>
+      <h1>ShopPilot architecture</h1>
+      <div class="sub">Offline-first multi-turn shopping agent · TechJam Track 4 · demo UI: Astrid CLI</div>
+    </div>
+  </div>
+
+  <div class="frame">
+    <svg viewBox="0 0 1040 620" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="ShopPilot architecture diagram">
+      <defs>
+        <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+          <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/>
+        </pattern>
+        <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+          <path d="M0,0 L6,3 L0,6 Z" fill="#64748b"/>
+        </marker>
+        <marker id="arrowCyan" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+          <path d="M0,0 L6,3 L0,6 Z" fill="#22d3ee"/>
+        </marker>
+        <marker id="arrowRose" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+          <path d="M0,0 L6,3 L0,6 Z" fill="#fb7185"/>
+        </marker>
+      </defs>
+
+      <rect width="1040" height="620" fill="#020617"/>
+      <rect width="1040" height="620" fill="url(#grid)"/>
+
+      <!-- Zone: online optional -->
+      <rect x="20" y="20" width="1000" height="90" rx="12" fill="none" stroke="#fbbf24" stroke-width="1.2" stroke-dasharray="8,4" opacity="0.7"/>
+      <text x="36" y="42" fill="#fbbf24" font-size="10" font-family="JetBrains Mono, monospace">OPTIONAL · network (off by default)</text>
+
+      <!-- Zone: offline core -->
+      <rect x="20" y="130" width="1000" height="400" rx="12" fill="none" stroke="#34d399" stroke-width="1.2" stroke-dasharray="8,4" opacity="0.55"/>
+      <text x="36" y="152" fill="#34d399" font-size="10" font-family="JetBrains Mono, monospace">DEFAULT · offline core (no API key)</text>
+
+      <!-- Arrows (behind boxes) -->
+      <!-- user -> nlu -->
+      <line x1="160" y1="230" x2="210" y2="230" stroke="#22d3ee" stroke-width="1.5" marker-end="url(#arrowCyan)"/>
+      <!-- nlu -> retrieve -->
+      <line x1="390" y1="230" x2="440" y2="230" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <!-- retrieve -> rank -->
+      <line x1="620" y1="230" x2="670" y2="230" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <!-- rank -> clarify -->
+      <line x1="850" y1="230" x2="900" y2="230" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <!-- clarify down to response -->
+      <line x1="970" y1="280" x2="970" y2="340" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <!-- response left label -->
+      <!-- catalog up to retrieve -->
+      <line x1="530" y1="400" x2="530" y2="300" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <!-- optional llm dashed into nlu -->
+      <line x1="300" y1="110" x2="300" y2="180" stroke="#fb7185" stroke-width="1.4" stroke-dasharray="4,3" marker-end="url(#arrowRose)"/>
+      <!-- optional rerank into rank -->
+      <line x1="760" y1="110" x2="760" y2="180" stroke="#fb7185" stroke-width="1.4" stroke-dasharray="4,3" marker-end="url(#arrowRose)"/>
+
+      <!-- USER -->
+      <rect x="40" y="200" width="120" height="70" rx="6" fill="#0f172a"/>
+      <rect x="40" y="200" width="120" height="70" rx="6" fill="rgba(8,51,68,0.45)" stroke="#22d3ee" stroke-width="1.5"/>
+      <text x="100" y="230" text-anchor="middle" fill="#e2e8f0" font-size="12" font-family="JetBrains Mono, monospace" font-weight="600">User turn</text>
+      <text x="100" y="250" text-anchor="middle" fill="#94a3b8" font-size="9" font-family="JetBrains Mono, monospace">free text</text>
+
+      <!-- NLU / DST -->
+      <rect x="210" y="185" width="180" height="100" rx="6" fill="#0f172a"/>
+      <rect x="210" y="185" width="180" height="100" rx="6" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.5"/>
+      <text x="300" y="215" text-anchor="middle" fill="#e2e8f0" font-size="12" font-family="JetBrains Mono, monospace" font-weight="600">NLU + DST state</text>
+      <text x="300" y="235" text-anchor="middle" fill="#94a3b8" font-size="9" font-family="JetBrains Mono, monospace">slots · family · audience</text>
+      <text x="300" y="252" text-anchor="middle" fill="#94a3b8" font-size="9" font-family="JetBrains Mono, monospace">override hygiene · multi-fill</text>
+      <text x="300" y="270" text-anchor="middle" fill="#64748b" font-size="8" font-family="JetBrains Mono, monospace">DST / state-update [13][14][6]</text>
+
+      <!-- RETRIEVE -->
+      <rect x="440" y="185" width="180" height="100" rx="6" fill="#0f172a"/>
+      <rect x="440" y="185" width="180" height="100" rx="6" fill="rgba(76,29,149,0.35)" stroke="#a78bfa" stroke-width="1.5"/>
+      <text x="530" y="215" text-anchor="middle" fill="#e2e8f0" font-size="12" font-family="JetBrains Mono, monospace" font-weight="600">Hybrid retrieve</text>
+      <text x="530" y="235" text-anchor="middle" fill="#94a3b8" font-size="9" font-family="JetBrains Mono, monospace">SQLite FTS5 OR + AND</text>
+      <text x="530" y="252" text-anchor="middle" fill="#94a3b8" font-size="9" font-family="JetBrains Mono, monospace">+ dense hash / MiniLM</text>
+      <text x="530" y="270" text-anchor="middle" fill="#64748b" font-size="8" font-family="JetBrains Mono, monospace">in-memory · no vector DB</text>
+
+      <!-- RANK -->
+      <rect x="670" y="185" width="180" height="100" rx="6" fill="#0f172a"/>
+      <rect x="670" y="185" width="180" height="100" rx="6" fill="rgba(6,78,59,0.35)" stroke="#34d399" stroke-width="1.5"/>
+      <text x="760" y="215" text-anchor="middle" fill="#e2e8f0" font-size="12" font-family="JetBrains Mono, monospace" font-weight="600">Rank</text>
+      <text x="760" y="235" text-anchor="middle" fill="#94a3b8" font-size="9" font-family="JetBrains Mono, monospace">constraints · family</text>
+      <text x="760" y="252" text-anchor="middle" fill="#94a3b8" font-size="9" font-family="JetBrains Mono, monospace">audience · profile/rating</text>
+      <text x="760" y="270" text-anchor="middle" fill="#64748b" font-size="8" font-family="JetBrains Mono, monospace">cold-start tie-breaks</text>
+
+      <!-- CLARIFY -->
+      <rect x="900" y="185" width="100" height="100" rx="6" fill="#0f172a"/>
+      <rect x="900" y="185" width="100" height="100" rx="6" fill="rgba(8,51,68,0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+      <text x="950" y="220" text-anchor="middle" fill="#e2e8f0" font-size="11" font-family="JetBrains Mono, monospace" font-weight="600">Clarify</text>
+      <text x="950" y="242" text-anchor="middle" fill="#94a3b8" font-size="8" font-family="JetBrains Mono, monospace">other-first</text>
+      <text x="950" y="258" text-anchor="middle" fill="#94a3b8" font-size="8" font-family="JetBrains Mono, monospace">skip filled</text>
+      <text x="950" y="274" text-anchor="middle" fill="#64748b" font-size="7" font-family="JetBrains Mono, monospace">CQ [1][5]</text>
+
+      <!-- RESPONSE -->
+      <rect x="820" y="340" width="180" height="90" rx="6" fill="#0f172a"/>
+      <rect x="820" y="340" width="180" height="90" rx="6" fill="rgba(8,51,68,0.45)" stroke="#22d3ee" stroke-width="1.5"/>
+      <text x="910" y="372" text-anchor="middle" fill="#e2e8f0" font-size="12" font-family="JetBrains Mono, monospace" font-weight="600">Turn response</text>
+      <text x="910" y="392" text-anchor="middle" fill="#94a3b8" font-size="9" font-family="JetBrains Mono, monospace">message</text>
+      <text x="910" y="408" text-anchor="middle" fill="#94a3b8" font-size="9" font-family="JetBrains Mono, monospace">ask_attribute (one|null)</text>
+      <text x="910" y="424" text-anchor="middle" fill="#94a3b8" font-size="9" font-family="JetBrains Mono, monospace">Top-10 parent_asin</text>
+
+      <!-- CATALOG -->
+      <rect x="440" y="400" width="180" height="80" rx="6" fill="#0f172a"/>
+      <rect x="440" y="400" width="180" height="80" rx="6" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1.5"/>
+      <text x="530" y="430" text-anchor="middle" fill="#e2e8f0" font-size="12" font-family="JetBrains Mono, monospace" font-weight="600">Catalog 50k CSJ</text>
+      <text x="530" y="450" text-anchor="middle" fill="#94a3b8" font-size="9" font-family="JetBrains Mono, monospace">frozen JSONL · FTS index</text>
+      <text x="530" y="466" text-anchor="middle" fill="#64748b" font-size="8" font-family="JetBrains Mono, monospace">read-only [16]</text>
+
+      <!-- OPTIONAL LLM boxes -->
+      <rect x="210" y="40" width="180" height="60" rx="6" fill="#0f172a"/>
+      <rect x="210" y="40" width="180" height="60" rx="6" fill="rgba(136,19,55,0.35)" stroke="#fb7185" stroke-width="1.5"/>
+      <text x="300" y="65" text-anchor="middle" fill="#e2e8f0" font-size="11" font-family="JetBrains Mono, monospace" font-weight="600">LLM slots NLU</text>
+      <text x="300" y="82" text-anchor="middle" fill="#94a3b8" font-size="8" font-family="JetBrains Mono, monospace">lowconf | always · fallback</text>
+
+      <rect x="670" y="40" width="180" height="60" rx="6" fill="#0f172a"/>
+      <rect x="670" y="40" width="180" height="60" rx="6" fill="rgba(136,19,55,0.35)" stroke="#fb7185" stroke-width="1.5"/>
+      <text x="760" y="65" text-anchor="middle" fill="#e2e8f0" font-size="11" font-family="JetBrains Mono, monospace" font-weight="600">LLM rerank top-K</text>
+      <text x="760" y="82" text-anchor="middle" fill="#94a3b8" font-size="8" font-family="JetBrains Mono, monospace">SHOPPILOT_LLM_RERANK=1</text>
+
+      <!-- Evaluator note -->
+      <rect x="40" y="400" width="200" height="80" rx="6" fill="#0f172a"/>
+      <rect x="40" y="400" width="200" height="80" rx="6" fill="rgba(30,41,59,0.5)" stroke="#94a3b8" stroke-width="1.5"/>
+      <text x="140" y="430" text-anchor="middle" fill="#e2e8f0" font-size="11" font-family="JetBrains Mono, monospace" font-weight="600">Official evaluator</text>
+      <text x="140" y="450" text-anchor="middle" fill="#94a3b8" font-size="8" font-family="JetBrains Mono, monospace">Hit@10 · MRR · MTTC</text>
+      <text x="140" y="466" text-anchor="middle" fill="#64748b" font-size="8" font-family="JetBrains Mono, monospace">Tech ~0.794 public 200</text>
+
+      <!-- Rejected path annotation -->
+      <text x="900" y="500" text-anchor="middle" fill="#fb7185" font-size="8" font-family="JetBrains Mono, monospace">max-IG ask [2] tried → Tech~0.72 · rejected</text>
+      <text x="530" y="560" text-anchor="middle" fill="#64748b" font-size="9" font-family="JetBrains Mono, monospace">Corpus-grounded CQ [5]: enum + pool facet examples · Funnel prior [4]: other then finer slots · Fatigue [3]: ≤10 turns</text>
+
+      <!-- Legend -->
+      <g transform="translate(40,575)">
+        <rect x="0" y="0" width="12" height="12" rx="2" fill="rgba(6,78,59,0.5)" stroke="#34d399"/>
+        <text x="18" y="10" fill="#94a3b8" font-size="8" font-family="JetBrains Mono, monospace">core logic</text>
+        <rect x="100" y="0" width="12" height="12" rx="2" fill="rgba(76,29,149,0.5)" stroke="#a78bfa"/>
+        <text x="118" y="10" fill="#94a3b8" font-size="8" font-family="JetBrains Mono, monospace">data / index</text>
+        <rect x="210" y="0" width="12" height="12" rx="2" fill="rgba(8,51,68,0.5)" stroke="#22d3ee"/>
+        <text x="228" y="10" fill="#94a3b8" font-size="8" font-family="JetBrains Mono, monospace">I/O · UI surface</text>
+        <rect x="340" y="0" width="12" height="12" rx="2" fill="rgba(136,19,55,0.5)" stroke="#fb7185"/>
+        <text x="358" y="10" fill="#94a3b8" font-size="8" font-family="JetBrains Mono, monospace">optional LLM</text>
+        <line x1="460" y1="6" x2="490" y2="6" stroke="#fb7185" stroke-width="1.4" stroke-dasharray="4,3"/>
+        <text x="496" y="10" fill="#94a3b8" font-size="8" font-family="JetBrains Mono, monospace">gated path</text>
+      </g>
+    </svg>
+  </div>
+
+  <div class="cards">
+    <div class="card">
+      <div class="card-header"><div class="card-dot emerald"></div><h3>From papers (adopt)</h3></div>
+      <ul>
+        <li>• DST compact state [13][14][6] — SessionState slots</li>
+        <li>• Corpus-grounded CQ [5][9] — enum + pool facets</li>
+        <li>• Funnel prior [4] — other → finer attributes</li>
+        <li>• Fatigue / contradiction [3] — ≤10 turns, override</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-dot cyan"></div><h3>Measured on kit</h3></div>
+      <ul>
+        <li>• Max-IG / entropy asks [1][2] → Tech ~0.72 — rejected</li>
+        <li>• Soft-only override wipe → override Hit ↑</li>
+        <li>• Hybrid FTS + dense hash → Tech ~0.794</li>
+        <li>• Offline default · 0 tokens</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-dot violet"></div><h3>Do not copy figures</h3></div>
+      <ul>
+        <li>• Redraw your pipeline (this diagram)</li>
+        <li>• Cite papers in text, not screenshot their plots</li>
+        <li>• Protocol: one ask_attribute per turn [16]</li>
+        <li>• LLM is optional add-on, not the spine</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="footer">
+    ShopPilot · github.com/algorathem/techjam2026-shopping-copilot · open this HTML in a browser · export PNG via screenshot for slides
+  </div>
+</body>
+</html>

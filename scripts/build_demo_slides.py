@@ -32,8 +32,9 @@ LINE = RGBColor(0x2A, 0x3A, 0x55)
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "docs" / "ShopPilot_Demo_Slides.pptx"
 ARCH_PNG = ROOT / "docs" / "architecture_diagram.png"
+LIT_PNG = ROOT / "docs" / "architecture_literature.png"
 W, H = Inches(13.333), Inches(7.5)
-TOTAL_SLIDES = 10
+TOTAL_SLIDES = 11
 
 # Live public-200 metrics (results.json) vs weak BM25 baseline
 BASE = {"tech": 0.107, "hit": 0.125, "mrr": 0.068, "mttc": 9.81}
@@ -476,13 +477,57 @@ def slide_architecture_overview(prs):
     _footer(s, 4)
 
 
+def slide_architecture_literature(prs):
+    """Classical CRS/DST/CQ/IR concepts redrawn — literature framing."""
+    s = prs.slides.add_slide(prs.slide_layouts[6])
+    _bg(s)
+    _accent_rail(s)
+    _section_label(s, "04  ·  Architecture in the literature")
+    _textbox(
+        s,
+        Inches(0.55),
+        Inches(0.48),
+        Inches(12),
+        Inches(0.35),
+        [("Classical CRS stack → ShopPilot modules", 22, True, WHITE)],
+    )
+    _textbox(
+        s,
+        Inches(0.55),
+        Inches(0.82),
+        Inches(12),
+        Inches(0.3),
+        [("Redrawn concepts — not paper screenshots  ·  Qulac · Bayesian CRS · DST · corpus CQs · hybrid IR", 12, False, MUTED)],
+    )
+    if not LIT_PNG.exists():
+        _rect(s, Inches(0.35), Inches(1.2), Inches(12.6), Inches(5.7), CARD, corner=0.08)
+        _textbox(
+            s,
+            Inches(0.8),
+            Inches(3.5),
+            Inches(11.5),
+            Inches(1.0),
+            [("Missing architecture_literature.png — run scripts/render_architecture_literature.py", 16, False, PINK)],
+            align=PP_ALIGN.CENTER,
+        )
+    else:
+        s.shapes.add_picture(
+            str(LIT_PNG),
+            Inches(0.22),
+            Inches(1.15),
+            width=Inches(12.9),
+            height=Inches(5.85),
+        )
+    _footer(s, 5)
+
+
 def slide_architecture_diagram(prs):
     """Full comprehensive diagram — nearly full-bleed (diagram has its own header)."""
     s = prs.slides.add_slide(prs.slide_layouts[6])
     _bg(s)
     # thin top chrome only — avoid double titles with the PNG header
     _accent_rail(s)
-    _section_label(s, "04  ·  Architecture detail")
+    _section_label(s, "05  ·  Architecture detail")
     _textbox(
         s,
         Inches(0.55),
@@ -512,14 +557,14 @@ def slide_architecture_diagram(prs):
             width=Inches(12.9),
             height=Inches(6.15),
         )
-    _footer(s, 5)
+    _footer(s, 6)
 
 
 def slide_results(prs):
     s = prs.slides.add_slide(prs.slide_layouts[6])
     _bg(s)
     _accent_rail(s)
-    _section_label(s, "05  ·  Results")
+    _section_label(s, "06  ·  Results")
     _title(s, "Public 200 — weak BM25 vs ShopPilot")
     _subtitle(s, "Official local_evaluator · SHOPPILOT_DENSE=hash · deterministic seeds")
 
@@ -573,14 +618,14 @@ def slide_results(prs):
             ("Tokens default path: 0", 13, True, GOOD),
         ],
     )
-    _footer(s, 6)
+    _footer(s, 7)
 
 
 def slide_scenarios(prs):
     s = prs.slides.add_slide(prs.slide_layouts[6])
     _bg(s)
     _accent_rail(s)
-    _section_label(s, "06  ·  By scenario")
+    _section_label(s, "07  ·  By scenario")
     _title(s, "Hit@10 holds across buying, browse, override, boundary")
     _subtitle(s, "Override pays more MTTC (mind-change cost) but still Hit 0.967")
 
@@ -615,14 +660,14 @@ def slide_scenarios(prs):
         _rect(s, Inches(8.7), y + Inches(0.65), Inches(max_w), Inches(0.14), RGBColor(0x1E, 0x2A, 0x40), corner=0.5)
         _rect(s, Inches(8.7), y + Inches(0.65), Inches(fill_w), Inches(0.14), CYAN if i % 2 == 0 else PINK, corner=0.5)
 
-    _footer(s, 7)
+    _footer(s, 8)
 
 
 def slide_demo(prs):
     s = prs.slides.add_slide(prs.slide_layouts[6])
     _bg(s)
     _accent_rail(s)
-    _section_label(s, "07  ·  Demo")
+    _section_label(s, "08  ·  Demo")
     _title(s, "Astrid CLI — live multi-turn")
     _subtitle(s, "python3 cli_chat.py --dense hash   ·   /new  /state  /quit")
 
@@ -663,14 +708,14 @@ def slide_demo(prs):
         _bar(s, Inches(8.5), y, Inches(0.08), Inches(1.5), col)
         _textbox(s, Inches(8.8), y + Inches(0.25), Inches(3.8), Inches(0.35), [(h, 15, True, col)])
         _textbox(s, Inches(8.8), y + Inches(0.7), Inches(3.8), Inches(0.6), [(b, 13, False, MUTED)])
-    _footer(s, 8)
+    _footer(s, 9)
 
 
 def slide_impact(prs):
     s = prs.slides.add_slide(prs.slide_layouts[6])
     _bg(s)
     _accent_rail(s)
-    _section_label(s, "08  ·  Impact")
+    _section_label(s, "09  ·  Impact")
     _title(s, "Kit metrics → merchant outcomes")
     _subtitle(s, "Honest framing: offline simulation ≠ live GMV A/B — same job-to-be-done as conversational commerce.")
 
@@ -687,7 +732,7 @@ def slide_impact(prs):
         _textbox(s, Inches(0.95), y + Inches(0.28), Inches(2.0), Inches(0.4), [(k, 16, True, MUTED)])
         _textbox(s, Inches(3.2), y + Inches(0.22), Inches(2.2), Inches(0.5), [(v, 26, True, col)])
         _textbox(s, Inches(5.6), y + Inches(0.3), Inches(6.8), Inches(0.45), [(note, 15, False, WHITE)])
-    _footer(s, 9)
+    _footer(s, 10)
 
 
 def slide_end(prs):
@@ -728,7 +773,7 @@ def slide_end(prs):
         x = Inches(0.9 + i * 3.5)
         _rect(s, x, Inches(5.5), Inches(3.2), Inches(0.55), CARD, corner=0.3, line=col)
         _textbox(s, x, Inches(5.57), Inches(3.2), Inches(0.4), [(lab, 13, True, WHITE)], align=PP_ALIGN.CENTER)
-    _footer(s, 10, left="TechJam 2026 Track 4")
+    _footer(s, 11, left="TechJam 2026 Track 4")
 
 
 def main() -> None:
@@ -739,6 +784,7 @@ def main() -> None:
     slide_problem(prs)
     slide_solution(prs)
     slide_architecture_overview(prs)
+    slide_architecture_literature(prs)
     slide_architecture_diagram(prs)
     slide_results(prs)
     slide_scenarios(prs)
@@ -747,7 +793,6 @@ def main() -> None:
     slide_end(prs)
     OUT.parent.mkdir(parents=True, exist_ok=True)
     prs.save(str(OUT))
-    # also drop a copy in Downloads for easy open
     dl = Path.home() / "Downloads" / "ShopPilot_Project_Deck_Astrid.pptx"
     try:
         prs.save(str(dl))
@@ -756,7 +801,7 @@ def main() -> None:
         print(f"Downloads copy skipped: {e}")
     print(f"WROTE {OUT}")
     print(f"slides={len(prs.slides)}")
-    print(f"arch={ARCH_PNG.exists()} {ARCH_PNG}")
+    print(f"arch={ARCH_PNG.exists()} lit={LIT_PNG.exists()}")
     print(f"metrics tech={OURS['tech']} hit={OURS['hit']} mrr={OURS['mrr']} mttc={OURS['mttc']}")
 
 

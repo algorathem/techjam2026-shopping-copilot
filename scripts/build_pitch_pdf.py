@@ -46,7 +46,10 @@ LINE = HexColor("#2A3A55")
 GOOD = HexColor("#34D399")
 GOLD = HexColor("#FBBF24")
 
-TOTAL = 9
+TOTAL = 10
+
+LIT_PNG = ROOT / "docs" / "architecture_literature.png"
+ARCH_PNG = ROOT / "docs" / "architecture_diagram.png"
 
 
 def try_fonts():
@@ -297,46 +300,76 @@ def slide_03(c: canvas.Canvas):
 
 
 def slide_04(c: canvas.Canvas):
+    """Architecture explained via classical CRS/DST/CQ/IR concepts (redrawn)."""
     draw_bg(c)
-    section_label(c, "03  ·  Architecture")
-    title(c, "State Is the Product: Non-Monotonic Dialog Tracking", size=22)
-    subtitle(c, "Override hygiene · taxonomy locks · empirically validated ask policy · zero-token default.")
+    section_label(c, "03  ·  Architecture in the literature")
+    title(c, "Classical CRS stack → ShopPilot modules", size=20)
+    subtitle(
+        c,
+        "Redrawn concept diagrams (not paper screenshots)  ·  Qulac · Bayesian CRS · DST · corpus CQs · hybrid IR",
+    )
+
+    if LIT_PNG.exists():
+        # nearly full-bleed under header
+        c.drawImage(
+            str(LIT_PNG),
+            0.35 * inch,
+            0.5 * inch,
+            width=12.6 * inch,
+            height=5.55 * inch,
+            preserveAspectRatio=True,
+            anchor="c",
+        )
+    else:
+        rounded_rect(c, 0.55 * inch, 2 * inch, 12.2 * inch, 2 * inch, CARD, PINK, 10)
+        c.setFillColor(PINK)
+        c.setFont(FONT_B, 14)
+        c.drawCentredString(W / 2, 3 * inch, "Missing architecture_literature.png — run render_architecture_literature.py")
+    footer(c, 4)
+
+
+def slide_04b(c: canvas.Canvas):
+    """System mechanisms (kit-specific) after literature framing."""
+    draw_bg(c)
+    section_label(c, "03b  ·  Kit mechanisms")
+    title(c, "State Is the Product: Non-Monotonic Dialog Tracking", size=20)
+    subtitle(c, "Literature spine + TechJam-specific provenance, taxonomy locks, and ask ablations.")
 
     # invariant banner
-    rounded_rect(c, 0.55 * inch, H - 2.35 * inch, 12.2 * inch, 0.75 * inch, CARD2, CYAN, 10, 1.5)
+    rounded_rect(c, 0.55 * inch, H - 2.25 * inch, 12.2 * inch, 0.7 * inch, CARD2, CYAN, 10, 1.5)
     c.setFillColor(CYAN)
     c.setFont(FONT_B, 10)
-    c.drawString(0.75 * inch, H - 1.8 * inch, "CORE INVARIANT")
+    c.drawString(0.75 * inch, H - 1.75 * inch, "CORE INVARIANT  ·  DST belief is cumulative")
     c.setFillColor(WHITE)
-    c.setFont(FONT, 13)
+    c.setFont(FONT, 12)
     c.drawString(
         0.75 * inch,
-        H - 2.15 * inch,
-        'Turn t₃ ("black") ranks against [dress + plus-size + black] — never "black" in isolation.',
+        H - 2.05 * inch,
+        'Turn t3 ("black") ranks against [dress + plus-size + black] — never "black" in isolation.',
     )
 
     mechanisms = [
         ("Selective Soft-Only Invalidation",
-         "On override: wipe soft prefs; keep disclosed facts the simulator will not re-send.", CYAN),
+         "DST update rule: on override wipe soft prefs; keep disclosed facts the simulator will not re-send.", CYAN),
         ("Taxonomy Boundary Lock",
-         "Disambiguate at ingest: dress sandals → family:footwear (not garment dresses).", PINK),
-        ("Empirically Validated Ask Policy",
-         "other-first funnel beats naive max-IG (max-IG dropped Tech to ≈0.72).", VIOLET),
-        ("Zero-Token Footprint",
-         "In-memory stdlib + NumPy. MiniLM / LLM paths are optional flags only.", GOOD),
+         "Sense disambiguation at NLU: dress sandals → family:footwear (not garment dresses).", PINK),
+        ("Ask policy vs max-IG",
+         "Bayesian max-IG implemented then rejected (Tech ≈0.72). Ship: other-first + static ladder.", VIOLET),
+        ("Corpus grounding without a CQ model",
+         "Facet chips in message from live pool (corpus-informed CQ spirit); enum stays closed.", GOOD),
     ]
     for i, (h, b, col) in enumerate(mechanisms):
         col_i, row_i = i % 2, i // 2
         x = 0.55 * inch + col_i * 6.25 * inch
-        y = 0.7 * inch + (1 - row_i) * 2.05 * inch
-        rounded_rect(c, x, y, 6.0 * inch, 1.9 * inch, CARD, None, 12)
+        y = 0.65 * inch + (1 - row_i) * 2.0 * inch
+        rounded_rect(c, x, y, 6.0 * inch, 1.85 * inch, CARD, None, 12)
         c.setFillColor(col)
-        c.rect(x, y, 6, 1.9 * inch, fill=1, stroke=0)
+        c.rect(x, y, 6, 1.85 * inch, fill=1, stroke=0)
         c.setFillColor(WHITE)
         c.setFont(FONT_B, 13)
-        c.drawString(x + 22, y + 1.4 * inch, h)
-        wrap_text(c, b, x + 22, y + 1.0 * inch, 5.5 * inch, size=12, leading=16, color=MUTED)
-    footer(c, 4)
+        c.drawString(x + 22, y + 1.35 * inch, h)
+        wrap_text(c, b, x + 22, y + 0.95 * inch, 5.5 * inch, size=12, leading=16, color=MUTED)
+    footer(c, 5)
 
 
 def slide_05(c: canvas.Canvas):
@@ -406,7 +439,7 @@ def slide_05(c: canvas.Canvas):
         leading=15,
         color=WHITE,
     )
-    footer(c, 5)
+    footer(c, 6)
 
 
 def slide_06(c: canvas.Canvas):
@@ -468,7 +501,7 @@ def slide_06(c: canvas.Canvas):
         leading=16,
         color=WHITE,
     )
-    footer(c, 6)
+    footer(c, 7)
 
 
 def slide_07(c: canvas.Canvas):
@@ -524,7 +557,7 @@ def slide_07(c: canvas.Canvas):
         c.setFont(FONT_B, 12)
         c.drawString(8.45 * inch, y + 0.85 * inch, h)
         wrap_text(c, b, 8.45 * inch, y + 0.55 * inch, 4.1 * inch, size=11, leading=14, color=MUTED)
-    footer(c, 7)
+    footer(c, 8)
 
 
 def slide_08(c: canvas.Canvas):
@@ -550,7 +583,7 @@ def slide_08(c: canvas.Canvas):
         c.setFillColor(WHITE)
         c.setFont(FONT, 13)
         c.drawString(5.2 * inch, y - 0.35 * inch, b)
-    footer(c, 8)
+    footer(c, 9)
 
 
 def slide_09(c: canvas.Canvas):
@@ -603,7 +636,7 @@ def slide_09(c: canvas.Canvas):
     c.setFillColor(WHITE)
     c.setFont(FONT_B, 14)
     c.drawString(0.7 * inch, 1.05 * inch, "Thank you — we welcome your questions.")
-    footer(c, 9, "TikTok TechJam 2026 Track 4")
+    footer(c, 10, "TikTok TechJam 2026 Track 4")
 
 
 def main() -> None:
@@ -612,16 +645,23 @@ def main() -> None:
     c.setTitle("ShopPilot — TikTok TechJam 2026 Pitch Deck")
     c.setAuthor("ShopPilot")
     builders = [
-        slide_01, slide_02, slide_03, slide_04, slide_05,
-        slide_06, slide_07, slide_08, slide_09,
+        slide_01,
+        slide_02,
+        slide_03,
+        slide_04,
+        slide_04b,
+        slide_05,
+        slide_06,
+        slide_07,
+        slide_08,
+        slide_09,
     ]
-    for i, fn in enumerate(builders):
+    for fn in builders:
         fn(c)
         c.showPage()
     c.save()
     print(f"WROTE {OUT} ({OUT.stat().st_size} bytes) pages={TOTAL}")
 
-    # convenience copies
     dl = Path.home() / "Downloads" / "ShopPilot_Pitch_Deck.pdf"
     try:
         dl.write_bytes(OUT.read_bytes())
@@ -629,15 +669,13 @@ def main() -> None:
     except Exception as e:
         print(f"Downloads copy skipped: {e}")
 
-    # also replace the badly named pulled PDF with a pointer note? keep both.
-    # Write a short README next to it
     note = ROOT / "docs" / "PITCH_DECK_README.md"
     note.write_text(
-        f"""# ShopPilot Pitch Deck (PDF)
+        """# ShopPilot Pitch Deck (PDF)
 
-**Canonical 9-slide PDF:** `docs/ShopPilot_Pitch_Deck.pdf`  
+**Canonical PDF:** `docs/ShopPilot_Pitch_Deck.pdf` (10 slides)  
 **Rebuild:** `python3 scripts/build_pitch_pdf.py`  
-**Outline source:** finalized 9-slide systems-engineering deck (TechJam 2026 Track 4)
+**Literature board:** `python3 scripts/render_architecture_literature.py`
 
 ## Design system (Astrid brand — same as PPTX)
 - BG `#0A121F` · Cyan `#00D4FF` · Rose `#FF2D8F` · Violet `#A855F7` · Muted `#8B9BB4` · Gold `#FBBF24`
@@ -646,14 +684,20 @@ def main() -> None:
 1. Title & executive scoreboard  
 2. Problem — four failure modes + objective function  
 3. Solution — five subsystems  
-4. Architecture — state invariance & override hygiene  
-5. Public benchmark table + early-termination paradox  
-6. Scenario breakdown  
-7. Astrid CLI live traces  
-8. Commercial impact  
-9. Conclusion & reproducibility  
+4. **Architecture in the literature** (redrawn CRS/DST/CQ/IR concepts)  
+5. Kit mechanisms (DST override, taxonomy, max-IG reject, corpus facets)  
+6. Public benchmark table + early-termination paradox  
+7. Scenario breakdown  
+8. Astrid CLI live traces  
+9. Commercial impact  
+10. Conclusion & reproducibility  
 
-Related PPTX (10-slide extended): `docs/ShopPilot_Demo_Slides.pptx`
+## Literature rule
+Cite papers in captions; **redraw** concept diagrams — never paste paper PDF figures.
+
+See `docs/architecture_literature.md` for the paper → module map.
+
+Related PPTX: `docs/ShopPilot_Demo_Slides.pptx`
 """,
         encoding="utf-8",
     )

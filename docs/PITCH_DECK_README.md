@@ -1,8 +1,8 @@
 # ShopPilot Pitch Deck (PDF)
 
-**Canonical 9-slide PDF:** `docs/ShopPilot_Pitch_Deck.pdf`  
+**Canonical PDF:** `docs/ShopPilot_Pitch_Deck.pdf` (10 slides)  
 **Rebuild:** `python3 scripts/build_pitch_pdf.py`  
-**Outline source:** finalized 9-slide systems-engineering deck (TechJam 2026 Track 4)
+**Literature board:** `python3 scripts/render_architecture_literature.py`
 
 ## Design system (Astrid brand — same as PPTX)
 - BG `#0A121F` · Cyan `#00D4FF` · Rose `#FF2D8F` · Violet `#A855F7` · Muted `#8B9BB4` · Gold `#FBBF24`
@@ -11,11 +11,17 @@
 1. Title & executive scoreboard  
 2. Problem — four failure modes + objective function  
 3. Solution — five subsystems  
-4. Architecture — state invariance & override hygiene  
-5. Public benchmark table + early-termination paradox  
-6. Scenario breakdown  
-7. Astrid CLI live traces  
-8. Commercial impact  
-9. Conclusion & reproducibility  
+4. **Architecture in the literature** (redrawn CRS/DST/CQ/IR concepts)  
+5. Kit mechanisms (DST override, taxonomy, max-IG reject, corpus facets)  
+6. Public benchmark table + early-termination paradox  
+7. Scenario breakdown  
+8. Astrid CLI live traces  
+9. Commercial impact  
+10. Conclusion & reproducibility  
 
-Related PPTX (10-slide extended): `docs/ShopPilot_Demo_Slides.pptx`
+## Literature rule
+Cite papers in captions; **redraw** concept diagrams — never paste paper PDF figures.
+
+See `docs/architecture_literature.md` for the paper → module map.
+
+Related PPTX: `docs/ShopPilot_Demo_Slides.pptx`

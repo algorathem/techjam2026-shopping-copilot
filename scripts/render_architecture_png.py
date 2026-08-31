@@ -177,19 +177,29 @@ def render_png() -> Path:
     rows = [
         ("Slots", "soft | disclosed | override · filled / asked / dont_care", CYAN),
         ("Route", "product_family · gift audience · buy / browse", CYAN),
-        ("Clean", "soft-only wipe on override · never re-ask filled", PINK),
-        ("Loop", "next turn = past state + current text (same session_id)", GOOD),
+        ("Clean", "soft-only wipe · never re-ask filled", PINK),
+        ("Loop", "next turn = past state + current text", GOOD),
     ]
-    yy = state_box[1] + 100
+    yy = state_box[1] + 105
     for k, v, col in rows:
         t(d, (state_box[0] + 28, yy), k, 16, col, True, "lt")
         t(d, (state_box[0] + 120, yy), v, 15, WHITE, False, "lt")
-        yy += 42
-    # invariant chip
-    rr(d, (state_box[0] + 28, state_box[3] - 70, state_box[2] - 28, state_box[3] - 24), CARD2, CYAN, 2, 10)
+        yy += 48
+    # invariant chip — clear of rows
+    chip_top = state_box[3] - 90
+    rr(d, (state_box[0] + 28, chip_top, state_box[2] - 28, state_box[3] - 28), CARD2, CYAN, 2, 10)
     t(
         d,
-        ((state_box[0] + state_box[2]) / 2, state_box[3] - 47),
+        ((state_box[0] + state_box[2]) / 2, chip_top + 20),
+        "INVARIANT",
+        11,
+        CYAN,
+        True,
+        "mm",
+    )
+    t(
+        d,
+        ((state_box[0] + state_box[2]) / 2, chip_top + 44),
         't3 "black" ranks with dress + plus + black — not alone',
         14,
         WHITE,

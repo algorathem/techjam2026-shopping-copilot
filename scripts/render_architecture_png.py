@@ -228,8 +228,8 @@ def main():
         (700, 145, 900, 255),
         (8, 40, 30),
         EM,
-        "Linear rank",
-        ["phrase · family · aud", "+ w·cosine · priors"],
+        "Evidence rank",
+        ["coverage×exact · family", "+ dense · tail · priors"],
     )
     diamond(
         d,
@@ -240,7 +240,7 @@ def main():
         (40, 30, 10),
         AMB,
         "Ask",
-        ["other→ladder", "skip filled"],
+        ["other×2→ladder", "Top-1 early"],
     )
     t(d, (1020, 270), "max-IG ✗ 0.72", 11, ROSE, False, "mt")
 
@@ -304,7 +304,7 @@ def main():
         ["+MRR · slow · off"],
         radius=10,
     )
-    t(d, (1340, 340), "timeout → rules  ·  not required for 0.794", 12, ROSE, False, "mt")
+    t(d, (1340, 340), "timeout → rules  ·  not required for 0.908", 12, ROSE, False, "mt")
 
     # --- MEASURE ---
     round_rect(
@@ -313,7 +313,7 @@ def main():
         (25, 30, 40),
         SLATE,
         "local_evaluator",
-        ["Hit@10 · MRR · MTTC", "Tech ~0.794", "guardrail before ship"],
+        ["Hit@10 · MRR · MTTC", "Tech ~0.908", "guardrail before ship"],
         radius=10,
     )
 

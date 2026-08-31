@@ -11,26 +11,28 @@ the Python standard library only (no LLM, no GPU, no vector database).
 
 Official weak BM25 starter vs this agent (`python -m evaluator.local_evaluator`):
 
-| Metric | Starter BM25 | ShopPilot | Δ |
+| Metric | Starter BM25 | ShopPilot (hash) | + MiniLM opt-in |
 |---|---:|---:|---:|
-| Hit Rate@10 | 0.125 | 0.930 | +0.805 |
-| MRR | 0.068 | 0.550 | +0.482 |
-| MTTC | 9.81 | 3.10 | −6.71 |
-| Efficiency | 0.119 | 0.790 | +0.671 |
-| TechnicalScore | 0.107 | 0.788 | +0.681 |
+| Hit Rate@10 | 0.125 | 0.930 | 0.925 |
+| MRR | 0.068 | 0.553 | 0.574 |
+| MTTC | 9.81 | 3.08 | 3.04 |
+| Efficiency | 0.119 | 0.793 | 0.796 |
+| TechnicalScore | 0.107 | **0.789** | **0.794** |
+
+Default / judge-friendly path is **hash** (or `none` without NumPy). MiniLM is explicit: `SHOPPILOT_DENSE=minilm` (needs `sentence-transformers`, first run embeds 50k once).
 
 TechnicalScore = `0.50×Hit@10 + 0.30×MRR + 0.20×clip((11−MTTC)/10, 0, 1)`.
 
-By scenario (this agent, `SHOPPILOT_DENSE=hash`):
+By scenario (hash default):
 
 | Scenario | N | Hit@10 | MRR | MTTC |
 |---|---:|---:|---:|---:|
 | Buying | 80 | 0.950 | 0.559 | 2.33 |
 | Browsing | 80 | 0.913 | 0.498 | 3.39 |
 | Intent override | 30 | 0.967 | 0.715 | 4.07 |
-| Boundary | 10 | 0.800 | 0.394 | 4.10 |
+| Boundary | 10 | 0.800 | 0.460 | 3.60 |
 
-Token usage: **0**. Offline fallback (`SHOPPILOT_DENSE=none`) stays stdlib-only at Tech ≈ 0.781.
+Token usage: **0** on lexical/dense paths.
 
 ## How it addresses the four pillars
 

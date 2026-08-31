@@ -61,8 +61,22 @@ class SlotParserTest(unittest.TestCase):
         self.assertNotIn("pink", terms)
         self.assertNotIn("party", terms)
 
-    def test_boundary_marks_dont_care(self) -> None:
-        self.agent._ingest(self.state, "I don't have a preference for color; please use your judgment.")
+    def test_boundary_no_pref_for_other_does_not_kill_catchall(self) -> None:
+        # First ask is other; boundary replies "no preference for other".
+        self.state.asked.append("other")
+        self.agent._ingest(
+            self.state,
+            "I don't have a preference for other; please use your judgment.",
+        )
+        self.assertNotIn("other", self.state.dont_care)
+        self.assertNotIn("other", self.state.asked)
+        self.assertEqual(self.agent._next_ask(self.state, turn=2), "other")
+
+    def test_boundary_no_pref_for_color_still_dont_care(self) -> None:
+        self.agent._ingest(
+            self.state,
+            "I don't have a preference for color; please use your judgment.",
+        )
         self.assertIn("color", self.state.dont_care)
 
     def test_other_is_first_question(self) -> None:

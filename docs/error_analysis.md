@@ -1,49 +1,46 @@
 # Error analysis (public 200)
 
-14 / 200 sessions miss Top-10 within 10 turns
-(TechnicalScore 0.788 with dense hash; 0.781 offline FTS-only; 0.753 pre-override-hygiene).
+14 / 200 miss on hash default (Tech **0.789**); MiniLM opt-in Tech **0.794** (15 miss, higher MRR).
 
-## False negatives (typical)
+## Clarifying-question strategy — keep current (measured)
 
-- **Lexical / near-duplicate gap (partially mitigated).** The hidden constraint is a long feature sentence. FTS5 retrieves the right category but a sibling title can outrank the exact `parent_asin`. Hashed char-ngram dense recall+rerank lifts some of these (Hit 0.925 → 0.930, MRR 0.537 → 0.550). Remaining misses need true semantic embeddings (MiniLM opt-in).
-- **Intent override (mitigated).** Protocol forbids a hit before turn 3 or 4. Soft-only wipe keeps disclosed hard facts the simulator will not re-send; discarded soft tokens are blocked from FTS; `asked` resets so `other` re-fires.
-- **Boundary first turn.** The first `ask_attribute` is always answered with "no preference", so turn 1 is under-informed.
+Simulator only reveals hidden constraints when `ask_attribute` is set. Policy:
 
-## False positives (typical)
+1. **Always ask + always Top-10** (until turn 9) — silent turns waste MTTC.
+2. **First ask = `other`** — catch-all dumps up to 2 undisclosed constraints (max protocol info gain).
+3. **Then static order** color → material → style → brand → …
+4. **Boundary fix:** if user says no-pref for `other`, do **not** kill the catch-all; re-ask `other` next turn (boundary MTTC 4.1 → 3.6).
+5. **After override:** reset `asked` so `other` can fire again.
 
-- High-review popular items in the same category/color outrank the true target when constraints are still generic ("I'm still exploring").
-- Store-name overlap: a brand token matches many SKUs from the same seller.
+### Ask-policy A/B (do not reopen without new evidence)
 
-## Trade-off
+| Policy | Tech | Call |
+|---|---:|---|
+| other-first + static order | **0.753+** stack | **shipped** |
+| coverage-gated pool swap | 0.752 | skip |
+| pure max pool info-gain | 0.720 | **reject** (brand entropy trap) |
+| early belief-stop (`ask=null`) | ~0.720 | **reject** (simulator stalls) |
+| LLM-chosen asks | unmeasured | high risk; kit classifier ≠ free-form facets |
 
-We optimize MTTC by asking `other` immediately (dumps hidden constraints) while still emitting a Top-10 every turn. That raises Hit@10 a lot versus silent BM25, at the cost of sometimes ranking a popular sibling above the exact ASIN.
+**Verdict:** clarifying questions are highly relevant, but “smarter” selection lost to the simulator’s closed attribute enum. Improve **messages** and **retrieval**, not the ask enum order.
 
-### Ask policy A/B
+## Dense backends
 
-| Ask policy | Hit@10 | MRR | MTTC | Tech |
-|---|---:|---:|---:|---:|
-| Static order after `other` (shipped) | 0.900 | 0.503 | 3.38 | 0.753 |
-| Coverage-gated pool swap | 0.900 | 0.502 | 3.42 | 0.752 |
-| Pure max pool info-gain | 0.865 | 0.478 | 3.78 | 0.720 |
+| Backend | Tech | Hit | MRR | MTTC | Notes |
+|---|---:|---:|---:|---:|---|
+| none | 0.781 | 0.925 | 0.537 | 3.12 | stdlib |
+| hash w=4.5 (default) | **0.789** | **0.930** | 0.553 | 3.08 | + boundary fix |
+| minilm w=10 (opt-in) | **0.794** | 0.925 | **0.574** | 3.04 | best MRR; heavier |
 
-### Override hygiene delta
+## False negatives (residual)
+
+- Near-duplicate titles (lexical siblings outrank true ASIN) — MiniLM helps MRR more than Hit.
+- Boundary still only 0.80 Hit (n=10).
+- One override miss left.
+
+## Override hygiene (kept)
 
 | Slice | Before | After |
 |---|---:|---:|
-| Overall Tech | 0.753 | **0.781** |
 | Override Hit@10 | 0.800 | **0.967** |
-| Override MRR | 0.493 | **0.714** |
 | Override MTTC | 5.80 | **4.07** |
-
-### Dense hybrid weight sweep (`SHOPPILOT_DENSE=hash`)
-
-| Weight | Hit@10 | MRR | MTTC | Tech |
-|---|---:|---:|---:|---:|
-| 0 (FTS only) | 0.925 | 0.537 | 3.12 | 0.781 |
-| 1.5 | 0.925 | 0.540 | 3.11 | 0.783 |
-| 2.5 | 0.930 | 0.542 | 3.10 | 0.786 |
-| 3.2 | 0.930 | 0.542 | 3.09 | 0.786 |
-| **4.5 (shipped)** | **0.930** | **0.550** | **3.10** | **0.788** |
-| 6.0 | 0.930 | 0.547 | 3.10 | 0.787 |
-
-`SHOPPILOT_DENSE=none` matches the weight-0 row (stdlib judges / no NumPy).

@@ -72,13 +72,21 @@ USE_CASE_TOKENS = (
     "hiking", "running", "gym", "winter", "summer", "outdoor", "work",
     "walking", "travel", "sport", "training", "beach", "rain", "snow",
 )
-# Dense hybrid lane weight inside the final score (hash cosine is ~[-1,1]).
-# Public-set sweep: w=0 → Tech 0.781; w=4.5 → 0.788; w=6.0 → 0.787.
-DENSE_SCORE_WEIGHT = 4.5
+# Dense hybrid lane weights (cosine ~[-1,1]). Tuned on public 200.
+# hash w=4.5 → Tech≈0.788; minilm w=10 → Tech≈0.792 (explicit opt-in).
+DENSE_WEIGHT_BY_BACKEND = {
+    "none": 0.0,
+    "hash": 4.5,
+    "minilm": 10.0,
+}
+DENSE_SCORE_WEIGHT = 4.5  # default/fallback when backend unknown
 DENSE_RECALL_K = 80
 INFO_GAIN_TOP_N = 40
-# Only override static order when the default facet is barely present in the
-# live pool AND another high-trust facet clearly splits candidates.
+# Clarifying-question policy (public-set A/B):
+#   other-first + static ASK_ORDER  → Tech 0.753 baseline stack
+#   pure max pool info-gain         → Tech 0.720  (REJECT)
+#   coverage-gated pool swap        → Tech 0.752  (≈flat, skip)
+# Keep static order. Facet stats remain for message grounding only.
 DEFAULT_COVERAGE_MAX = 0.35
 ALT_GAIN_MIN = 0.45
 LOOKING_RE = re.compile(
@@ -370,7 +378,13 @@ class Agent:
         if no_pref:
             attr = no_pref.group(1).lower()
             if attr in ALLOWED_ATTRIBUTES:
-                state.dont_care.add(attr)
+                # Boundary sessions burn the *first* ask with a no-pref reply.
+                # If that ask was `other`, do NOT permanently kill the catch-all:
+                # drop it from asked so the next turn can still dump constraints.
+                if attr == "other":
+                    state.asked = [a for a in state.asked if a != "other"]
+                else:
+                    state.dont_care.add(attr)
         require = REQUIRE_RE.search(text)
         if require:
             # Simulator disclosures + override "What I need is:" land here.
@@ -582,7 +596,11 @@ class Agent:
             base = self._score(product, phrases, tag_l, bm25_map.get(asin, 0.0), state)
             dense = dense_map.get(asin)
             if dense is not None:
-                base += DENSE_SCORE_WEIGHT * dense
+                weight = DENSE_WEIGHT_BY_BACKEND.get(
+                    getattr(self._dense, "backend", "none"),
+                    DENSE_SCORE_WEIGHT,
+                )
+                base += weight * dense
             scored.append((asin, base))
         scored.sort(key=lambda item: item[1], reverse=True)
         scored = scored[: max(top_k, 20)]

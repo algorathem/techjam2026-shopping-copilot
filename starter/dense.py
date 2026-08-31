@@ -35,12 +35,8 @@ def dense_mode() -> str:
         return "minilm"
     if raw in {"hash", "ngram", "1", "true", "on"}:
         return "hash"
-    # auto: prefer minilm if installed, else hash if numpy, else none
-    try:
-        import sentence_transformers  # noqa: F401
-        return "minilm"
-    except Exception:
-        pass
+    # auto: prefer cheap hash when numpy exists. MiniLM is explicit-only
+    # (SHOPPILOT_DENSE=minilm) — better MRR when tuned, heavier install.
     try:
         import numpy  # noqa: F401
         return "hash"

@@ -14,7 +14,7 @@ Official weak BM25 starter vs this agent (`python -m evaluator.local_evaluator`)
 | Metric | Starter BM25 | ShopPilot (hash) |
 |---|---:|---:|
 | Hit Rate@10 | 0.125 | **0.975** |
-| MRR | 0.068 | **0.859** |
+| MRR | 0.068 | **0.860** |
 | MTTC | 9.81 | **2.87** |
 | Efficiency | 0.119 | **0.813** |
 | TechnicalScore | 0.107 | **0.908** |
@@ -42,6 +42,9 @@ export SHOPPILOT_OTHER_TWICE=1       # 0 disables second other
 export SHOPPILOT_CATEGORY_TAIL=1     # 0 disables tail bonus
 export SHOPPILOT_EVIDENCE_RANK=1     # 0 falls back to flat phrase bonuses
 ```
+
+Policy battery (`scripts/run_policy_battery.py`): full-match jackpot (+tiny MRR) kept; score-gap Top-1 / soft-miss / other×3 did not beat floor — see `docs/policy_battery_results.md`.
+
 
 ## How it addresses the four pillars
 

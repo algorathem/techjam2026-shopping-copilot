@@ -115,6 +115,20 @@ EVIDENCE_SOFT_MULT = 1.0
 # Title pin (default off — public A/B dropped Tech ~0.006).
 EVIDENCE_TITLE_EXACT = 6.0
 EVIDENCE_TITLE_COVERAGE = 2.0
+# Experimental MRR policies (default off unless noted; A/B via env).
+# Keep Top-1 while score(top1)-score(top2) < gap (0 = disabled).
+PRECISION_GAP_DEFAULT = 0.0
+# Soft demote when a disclosed multi-token phrase is fully absent (0 = off).
+SOFT_MISS_PENALTY_DEFAULT = 0.0
+# Bonus when product fully covers all multi-token disclosed constraints.
+# Public A/B: 8.0 → Tech 0.907753 → 0.908104 (MRR +0.001); keep on.
+FULL_MATCH_BONUS_DEFAULT = 8.0
+# Allow a third `other` if still almost empty (0/1).
+OTHER_THRICE_DEFAULT = 0
+# Stop asking from this turn onward when evidence is rich (9 = legacy).
+STOP_ASK_TURN_DEFAULT = 9
+# Min constraints to consider "rich" for early stop-ask.
+STOP_ASK_MIN_CONS_DEFAULT = 3
 # Clarifying-question policy (public-set A/B):
 #   other-first + static ASK_ORDER  → Tech 0.753 baseline stack
 #   pure max pool info-gain         → Tech 0.720  (REJECT)
@@ -837,7 +851,7 @@ class Agent:
         if ask:
             state.asked.append(ask)
         message = self._compose_message(state, ask, ranked)
-        emit_k = self._emit_top_k(state, turn, top_k)
+        emit_k = self._emit_top_k(state, turn, top_k, ranked=ranked)
         return {
             "message": message,
             "ask_attribute": ask,
@@ -857,11 +871,15 @@ class Agent:
         except ValueError:
             return PRECISION_TURNS_DEFAULT
 
-    def _emit_top_k(self, state: SessionState, turn: int, top_k: int) -> int:
+    def _emit_top_k(
+        self,
+        state: SessionState,
+        turn: int,
+        top_k: int,
+        ranked: list[tuple[str, float]] | None = None,
+    ) -> int:
         """Narrow Top-K early until enough evidence (MRR-focused precision)."""
         n = self._precision_turns()
-        if n <= 0:
-            return top_k
         try:
             min_cons = max(0, int(os.environ.get("SHOPPILOT_PRECISION_MIN_CONS", str(PRECISION_MIN_CONS_DEFAULT))))
         except ValueError:
@@ -870,15 +888,28 @@ class Agent:
             max_turn = max(n, int(os.environ.get("SHOPPILOT_PRECISION_MAX", str(PRECISION_MAX_TURN_DEFAULT))))
         except ValueError:
             max_turn = PRECISION_MAX_TURN_DEFAULT
+        try:
+            gap = float(os.environ.get("SHOPPILOT_PRECISION_GAP", str(PRECISION_GAP_DEFAULT)))
+        except ValueError:
+            gap = PRECISION_GAP_DEFAULT
 
-        if turn <= n:
+        # Fixed early window.
+        if n > 0 and turn <= n:
             return 1
         # Adaptive: keep Top-1 while still light on constraints (capped).
-        if turn <= max_turn and len(state.constraints) < min_cons:
+        if n > 0 and turn <= max_turn and min_cons > 0 and len(state.constraints) < min_cons:
             return 1
+        # Score-gap gate: stay Top-1 while leaders are too close (uncertain).
+        if gap > 0 and ranked and len(ranked) >= 2 and turn <= max(max_turn, 6):
+            s0 = float(ranked[0][1])
+            s1 = float(ranked[1][1])
+            if (s0 - s1) < gap:
+                return 1
         # One precision turn on the override message itself.
         if state.messages and OVERRIDE_RE.search(state.messages[-1] or ""):
             return 1
+        if n <= 0 and gap <= 0:
+            return top_k
         return top_k
 
     @staticmethod
@@ -1091,7 +1122,23 @@ class Agent:
         turn: int,
         ranked: list[tuple[str, float]] | None = None,
     ) -> str | None:
-        if turn >= 9:
+        try:
+            stop_turn = int(os.environ.get("SHOPPILOT_STOP_ASK_TURN", str(STOP_ASK_TURN_DEFAULT)))
+        except ValueError:
+            stop_turn = STOP_ASK_TURN_DEFAULT
+        try:
+            stop_min = int(os.environ.get("SHOPPILOT_STOP_ASK_MIN_CONS", str(STOP_ASK_MIN_CONS_DEFAULT)))
+        except ValueError:
+            stop_min = STOP_ASK_MIN_CONS_DEFAULT
+        if turn >= stop_turn:
+            return None
+        # Early stop when notebook is already rich (save turns / avoid noise).
+        if (
+            turn >= max(6, stop_turn - 2)
+            and stop_turn < 9
+            and len(state.constraints) >= stop_min
+            and len(state.filled) >= 2
+        ):
             return None
         asked = set(state.asked)
         blocked = state.dont_care | asked
@@ -1099,9 +1146,7 @@ class Agent:
         # constraints of any type — highest protocol-level information gain.
         if "other" not in blocked:
             return "other"
-        # Peer-style: allow a second `other` once when still thin on evidence
-        # (simulator can dump another pair of constraints). Off unless
-        # SHOPPILOT_OTHER_TWICE=1 (default ON for this experiment).
+        # Second `other` when still thin.
         other_twice = os.environ.get("SHOPPILOT_OTHER_TWICE", "1") != "0"
         if (
             other_twice
@@ -1109,6 +1154,16 @@ class Agent:
             and "other" not in state.dont_care
             and turn <= 4
             and len(state.constraints) < 4
+        ):
+            return "other"
+        # Optional third `other` only if still almost empty.
+        other_thrice = os.environ.get("SHOPPILOT_OTHER_THRICE", str(OTHER_THRICE_DEFAULT)) == "1"
+        if (
+            other_thrice
+            and state.asked.count("other") == 2
+            and "other" not in state.dont_care
+            and turn <= 5
+            and len(state.constraints) < 2
         ):
             return "other"
         candidates: list[str] = []
@@ -1119,17 +1174,15 @@ class Agent:
                 continue
             if attr == "category" and state.category:
                 continue
+            # Optional: deprioritize brand (high entropy, weak simulator answers).
+            if os.environ.get("SHOPPILOT_SKIP_BRAND_ASK", "0") == "1" and attr == "brand":
+                continue
             candidates.append(attr)
         if not candidates:
             return None
         default = candidates[0]
         if not ranked:
             return default
-        # Public-set A/B (deterministic seed): pure static ASK_ORDER scores
-        # Tech≈0.753; aggressive pool max-IG drops to ~0.72 (brand entropy trap);
-        # coverage-gated swaps sit at ~0.752. Keep static selection for score,
-        # and use the live pool only to ground the natural-language message
-        # (see _facet_options). Facet stats remain available for future policy.
         return default
 
     def _attribute_stats(self, attr: str, ranked: list[tuple[str, float]]) -> tuple[float, float]:
@@ -1397,7 +1450,52 @@ class Agent:
         # Multi-constraint exact combo (legacy flag; mild add-on when evidence rank on)
         if os.environ.get("SHOPPILOT_EXACT_COMBO", "0") == "1":
             score += self._exact_combo_bonus(product, state, phrases)
+        # Full-match jackpot + soft disclosed miss (experimental MRR levers).
+        score += self._full_match_and_soft_miss(product, state)
         return score
+
+    def _full_match_and_soft_miss(self, product: dict, state: SessionState) -> float:
+        try:
+            jackpot = float(os.environ.get("SHOPPILOT_FULL_MATCH", str(FULL_MATCH_BONUS_DEFAULT)))
+        except ValueError:
+            jackpot = FULL_MATCH_BONUS_DEFAULT
+        try:
+            miss_pen = float(os.environ.get("SHOPPILOT_SOFT_MISS", str(SOFT_MISS_PENALTY_DEFAULT)))
+        except ValueError:
+            miss_pen = SOFT_MISS_PENALTY_DEFAULT
+        if jackpot <= 0 and miss_pen <= 0:
+            return 0.0
+        full = (product.get("text") or "").lower()
+        if not full:
+            return 0.0
+        # Disclosed multi-token phrases only (high precision).
+        phrases: list[str] = []
+        for i, c in enumerate(state.constraints):
+            src = state.constraint_sources[i] if i < len(state.constraint_sources) else "soft"
+            if src not in {"disclosed", "override"}:
+                continue
+            toks = _terms(c)
+            if len(toks) >= 2 or len(c) >= 8:
+                phrases.append(c.lower().strip())
+        if len(phrases) < 2:
+            return 0.0
+        hits = 0
+        misses = 0
+        for p in phrases:
+            toks = _terms(p)
+            if not toks:
+                continue
+            if p in full or all(t in full for t in toks[:8]):
+                hits += 1
+            else:
+                misses += 1
+        delta = 0.0
+        if jackpot > 0 and hits >= 2 and misses == 0 and hits == len(phrases):
+            delta += jackpot + 1.5 * (hits - 2)
+        if miss_pen > 0 and misses >= 1:
+            # Mild only; never wipe candidates.
+            delta -= miss_pen * min(misses, 3)
+        return delta
 
     def _evidence_rank_score(
         self,

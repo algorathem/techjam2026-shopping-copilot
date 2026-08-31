@@ -18,9 +18,33 @@ Contributions. (1) A production-shaped multi-turn agent interface fully compatib
 
 ## II. Related Work and Problem Framing
 
-Conversational recommendation and task-oriented dialog systems classically separate natural language understanding (slot filling), dialog management (what to ask next), and retrieval/ranking. Industrial shopping assistants further add intent routing between high-precision buying and exploratory browsing. Dense retrieval and cross-encoders improve paraphrase recall but add dependencies. ShopPilot follows the classical pipeline under strict hackathon constraints: in-memory execution, read-only catalog, no ASIN injection, and a protocol-legal ask_attribute vocabulary.
+Conversational recommendation (CRS) and task-oriented dialog systems classically separate natural language understanding (slot filling), dialog management (what to ask next), and retrieval/ranking. ShopPilot follows that pipeline under hackathon constraints—in-memory execution, read-only catalog, no ASIN injection, and a protocol-legal `ask_attribute` vocabulary—rather than open-ended LLM dialogue. We organize prior work into four clusters that map onto our modules, then state how the TechJam task instantiates them.
 
-The challenge’s four pillars map directly onto system modules: (I) intent routing and hybrid multi-route retrieval; (II) multi-turn state evolution including override and boundary don’t-care; (III) context programming via accumulated slots and retrieval query construction; (IV) evaluation on Hit@10, MRR, and MTTC aggregated as TechnicalScore = 0.50·Hit@10 + 0.30·MRR + 0.20·clip((11−MTTC)/10, 0, 1).
+### A. Clarifying Questions in Search and CRS
+
+Asking clarifying questions (CQs) is a first-class lever for multi-turn retrieval. Qulac showed that CQ selection should condition on the original query and prior question–answer interactions, and that even one well-chosen question can yield large gains in early precision (e.g., P@1) [1]. In CRS, learning to ask appropriate questions is repeatedly identified as the key to tracing dynamic preferences and reaching accurate recommendations in fewer turns [8]. Zero-shot CQ generation for conversational search further emphasizes templates and query facets to keep questions effective and precise without large labeled CQ corpora [9]. Preference-elicitation work with large language models studies funnel-style questioning—broad concepts first, then finer attributes as the dialog proceeds [4].
+
+ShopPilot instantiates these ideas without a learned CQ generator: every turn pairs a Top-K list with exactly one enum-constrained ask; the first ask is the simulator catch-all `other` (broad disclosure), then a static facet order (color → material → style → …) analogous to a shallow funnel [4], [9]. Message wording is optionally grounded in facets observed in the live candidate pool (Section III-D).
+
+### B. Information Gain, User Limits, and Corpus Grounding
+
+Bayesian CRS formulations select the question that minimizes conditional entropy (maximizes expected information gain) and may stop when posterior entropy is low [2]. Empirically, users will answer a substantial number of product CQs on average, yet fatigue and irrelevant questions cause early abandonment, and a non-trivial fraction of answers can contradict the eventual target description [3]. Separately, corpus-informed CQ generation argues that questions should be a function of the repository and the information it actually contains; otherwise generators “hallucinate” intents absent from the catalog [5].
+
+These results jointly motivate ShopPilot’s design tensions. MTTC is an explicit efficiency objective under a hard 10-turn cap, consistent with fatigue bounds [3]. Boundary don’t-care handling covers preference refusal. Critically, we evaluated a pure maximum information-gain ask policy over the live candidate pool—the textbook recommendation from [2]—and observed a large TechnicalScore drop on the official public simulator (historical ≈0.72 vs. static+`other`-first). High-entropy brand/store splits often fail to match the simulator’s hidden constraint classifier, so unconstrained IG is not automatically optimal under protocol-mismatched oracles. We therefore keep a simulator-aligned static order while still using pool-derived facet tags for message grounding, in the spirit of corpus-informed CQs [5] without free-form generation.
+
+### C. Dialog State Tracking, Intents, and Slots
+
+Dialogue state tracking (DST) maintains structured slot–value constraints across turns rather than relying on raw history alone [6], [13], [14]. Scalable multi-domain DST represents state over candidate value sets derived from history and knowledge [6]. Joint models map utterances to intents and slots (e.g., profile-conditioned intent–slot models [11] and explicit multi-intent slot mapping [12]). Consumer-type-aware CRS adapts recommendation granularity and attribute-query complexity to user type [10].
+
+ShopPilot’s `SessionState` is a compact, rule-based DST: ordered constraints with provenance tags `soft` / `disclosed` / `override`, asked and don’t-care sets, internal family/audience labels, and a history cursor that drops pre-override turns from retrieval. Soft-only wipe on intent override is our task-specific state-update rule: abandoned preferences must not re-enter FTS, while disclosed hard facts (which the simulator will not re-send) are retained. Buying vs. browsing cues play a lightweight role analogous to type- or intent-adaptive policy [10], without a trained consumer-type classifier. Optional LLM slot normalization (off by default) is schema-validated against the official ask enum, closer to constrained slot filling than open generation [11], [12].
+
+### D. Challenge Framing and System Position
+
+The TechJam 2026 conversational-search kit defines the catalog, Agent API, scenarios (buying, browsing, intent override, boundary), and metrics [16]. The four pillars map to modules as follows: (I) intent routing and hybrid multi-route retrieval; (II) multi-turn state evolution including override and don’t-care; (III) context programming via accumulated slots and query construction; (IV) evaluation on Hit@10, MRR, and MTTC with
+
+TechnicalScore = 0.50·Hit@10 + 0.30·MRR + 0.20·clip((11−MTTC)/10, 0, 1).
+
+Dense retrievers and cross-encoders can improve paraphrase recall but add dependencies; our default path remains lexical FTS5 plus optional hashed n-gram dense fusion. **Positioning.** ShopPilot is not a reimplementation of Qulac, Bayesian CRS, KBQG, or LLM funnel agents [1], [2], [4], [8]. It is an offline, enum-constrained retrieve-and-ask agent that borrows their problem structure—CQ quality, statefulness, corpus grounding, turn efficiency—and validates design choices with public-set ablations, including a negative result for unconstrained max-IG ask selection on this simulator.
 
 ## III. System Architecture
 
@@ -99,11 +123,13 @@ Negative results (selected). Pure max-IG ask ordering over the live pool reduced
 
 ## VI. Discussion
 
-Why offline hybrid works here. The simulator’s information channel is dominated by structured ask_attribute disclosures and lexical overlap with catalog fields (title, categories, features). Once constraints are captured with provenance, BM25 + coverage scoring recovers the target ASIN for most sessions. Dense hash n-grams help residual paraphrase gaps without a GPU.
+Why offline hybrid works here. The simulator’s information channel is dominated by structured `ask_attribute` disclosures and lexical overlap with catalog fields (title, categories, features). Once constraints are captured with provenance, BM25 + coverage scoring recovers the target ASIN for most sessions—consistent with CQ literature that ties good questions to large early-precision gains [1], [8]. Dense hash n-grams help residual paraphrase gaps without a GPU.
 
 MRR as the critical lever. TechnicalScore weights MRR at 0.30. Ending sessions on a Top-10 hit that is not rank-1 caps reciprocal rank. Precision turns deliberately delay broad Top-10 emission until the state is rich enough to place the target higher—trading a small risk of later hit for large MRR gains (0.55 → 0.84 class improvement between intermediate and final stacks).
 
-Public-set overfitting risk. All reported numbers use the same 200 sessions available to every team. High public scores can exploit simulator phrasing. We mitigate via unit tests, scenario breakdowns, documented rejected policies, and an offline default that judges can run with network disabled. The private 800 remains the only pristine ranking; we did not access it.
+Ask policy vs. information gain. Theory favors entropy-reducing questions [2]; our public-set ablation shows that naively maximizing pool split entropy is not sufficient when the oracle’s attribute channel differs from high-entropy catalog facets. Corpus-grounded facet mentions in messages [5] remain useful even when ask *order* stays static.
+
+Public-set overfitting risk. All reported numbers use the same 200 sessions available to every team. High public scores can exploit simulator phrasing. We mitigate via unit tests, scenario breakdowns, documented rejected policies, and an offline default that judges can run with network disabled. The private 800 remains the only pristine ranking; we did not access it. Empirical CQ studies also warn that lab/simulator answer behavior can diverge from free users [3].
 
 Positioning vs leaderboard claims. Public GitHub READMEs report TechnicalScores from approximately 0.75 to 0.97. ShopPilot at 0.897 is competitive on the official metric while prioritizing reproducibility, zero tokens, and explicit failure analysis. Final hackathon ranking also includes innovation, impact, feasibility, and presentation beyond TechnicalScore alone.
 
@@ -143,6 +169,36 @@ ShopPilot demonstrates that a carefully engineered offline multi-turn retrieve-a
 
 Approximate sizes: starter/agent.py 1632 lines; dense.py 235; llm_slots.py 361; llm_rerank.py 197; rewrite.py 64. Supporting docs include DEVPOST.md, DEMO_VIDEO_SCRIPT.md, architecture diagram, miss-category reports, and unit tests under tests/.
 
-Acknowledgment—Built on the TechJam2026/techjam-conversational-search participant kit and evaluator. Metrics in Section V are taken from the author’s results.json produced by the unmodified official local evaluator.
+## References
+
+[1] M. Aliannejadi, H. Zamani, F. Crestani, and W. B. Croft, “Asking Clarifying Questions in Open-Domain Information-Seeking Conversations,” in *Proc. SIGIR*, 2019. arXiv:1907.06554.
+
+[2] F. Mangili, D. Broggini, A. Antonucci, M. Alberti, and L. Cimasoni, “A Bayesian Approach to Conversational Recommendation Systems,” arXiv:2002.05063, 2020.
+
+[3] J. Zou, E. Kanoulas, and Y. Liu, “An Empirical Study of Clarifying Question-Based Systems,” arXiv:2008.00279, 2020 (parts in CIKM 2020).
+
+[4] A. Montazeralghaem, G. Tennenholtz, C. Boutilier, and O. Meshi, “Asking Clarifying Questions for Preference Elicitation With Large Language Models,” arXiv:2510.12015, 2025.
+
+[5] A. M. Krasakis, A. Yates, and E. Kanoulas, “Corpus-informed Retrieval Augmented Generation of Clarifying Questions,” arXiv:2409.18575, 2024.
+
+[6] A. Rastogi, D. Hakkani-Tür, and L. Heck, “Scalable Multi-Domain Dialogue State Tracking,” arXiv:1712.10224, 2017.
+
+[8] X. Ren, H. Yin, T. Chen, H. Wang, Z. Huang, and K. Zheng, “Learning to Ask Appropriate Questions in Conversational Recommendation,” in *Proc. SIGIR*, 2021. arXiv:2105.04774.
+
+[9] Z. Wang, Y. Tu, C. Rosset, N. Craswell, M. Wu, and Q. Ai, “Zero-shot Clarifying Question Generation for Conversational Search,” arXiv:2301.12660, 2023.
+
+[10] Y. Luo, H. Fang, and Z. Sun, “Research on Conversational Recommender System Considering Consumer Types,” arXiv:2508.13209, 2025.
+
+[11] T. Pham and D. Q. Nguyen, “JPIS: A Joint Model for Profile-based Intent Detection and Slot Filling with Slot-to-Intent Attention,” arXiv:2312.08737, 2023.
+
+[12] F. Cai, W. Zhou, F. Mi, and B. Faltings, “SLIM: Explicit Slot-Intent Mapping with BERT for Joint Multi-Intent Detection and Slot Filling,” arXiv:2108.11711, 2021.
+
+[13] Emergent Mind, “Dialogue State Tracking (DST),” topic survey. [Online]. Available: https://www.emergentmind.com/topics/dialogue-state-tracking-dst
+
+[14] Emergent Mind, “State-Update Multi-Turn Dialogue Strategy,” topic survey. [Online]. Available: https://www.emergentmind.com/topics/state-update-multi-turn-dialogue-strategy
+
+[16] TechJam 2026, “techjam-conversational-search” participant kit and evaluator. [Online]. Available: https://github.com/TechJam2026/techjam-conversational-search
+
+Acknowledgment—Built on the TechJam2026/techjam-conversational-search participant kit and evaluator [16]. Metrics in Section V are taken from the author’s results.json produced by the unmodified official local evaluator. Related-work quotes and arXiv identifiers were curated by the author from public abstracts; full bibliographic venues should be verified against the PDF versions of [1]–[12] for camera-ready use.
 
 Document type: IEEE-style technical report for hackathon documentation (not a peer-reviewed IEEE publication). Generated for TikTok TechJam 2026 Track 4 submission materials.

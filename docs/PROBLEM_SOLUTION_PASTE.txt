@@ -1,0 +1,67 @@
+## Problem
+
+Traditional e-commerce search is mostly one-shot keyword matching. Shoppers don't talk that way: they browse, change their mind, add constraints over several turns, and still expect the right product quickly.
+
+On large catalogs (here: frozen Amazon Clothing, Shoes & Jewelry, 50k items), that fails when:
+
+- Queries are vague ("something nice for summer")
+- Language is ambiguous ("dress" vs dress shoes; "for my son" vs women's items)
+- Preferences change mid-chat (intent override)
+- The system re-asks slots already answered or burns the 10-turn budget
+
+The TechJam track asks for a multi-turn shopping agent that recovers a hidden target parent_asin under buying / browsing / override / boundary scenarios, scored by:
+
+- Hit@10 — is the purchase in the top 10?
+- MRR — how high is it ranked?
+- MTTC — how many turns until first hit?
+
+…combined into TechnicalScore, with a hard ≤10 turns cap (misses hurt badly).
+
+Real-world stakes match the kit: weak search UX drives refine-loops and abandonment; conversational commerce only works if the catalog brain can clarify, remember state, and rank exactly — not just chat.
+
+## Solution
+
+ShopPilot is a headless, offline-first multi-turn shopping agent (demo UI: Astrid CLI). Same API every turn: natural message + one structured ask_attribute + ranked recommendations.
+
+### How it works
+
+1. Intent & routing
+   - Buying vs browsing cues
+   - Internal product family (e.g. garment dress ≠ dress sandals)
+   - Internal audience (e.g. "for my son" → demote women's items)
+
+2. Dialog state
+   - Slots aligned to the official enum: color, material, size, style, brand, budget, feature, use_case, category, other
+   - Soft / disclosed / override sources; soft-only wipe on mind-change (keep hard disclosed facts)
+   - Skip filled / dont_care; no dumb re-asks
+   - Rich freeform lines fill multiple slots in one turn
+
+3. Clarify when vague
+   - Same turn: Top-10 and a question
+   - First ask = other (simulator can reveal several constraints)
+   - Then a static ask order among open slots (pool "max-IG" asks were A/B'd and hurt score)
+
+4. Hybrid retrieve + rank (in-memory)
+   - SQLite FTS5 + optional dense (hash n-grams default; MiniLM opt-in)
+   - Family / audience / constraints / light profile & rating tie-breaks
+   - No required LLM or vector DB
+
+5. Measured
+   - Official local evaluator on public 200
+
+| | Weak BM25 starter | ShopPilot (hash default) |
+|---|---:|---:|
+| TechnicalScore | ~0.11 | ~0.794 |
+| Hit@10 | 0.125 | 0.935 |
+| MTTC | ~9.8 | ~3.0 |
+
+Optional Gemini slot-NLU / rerank exists behind flags with rules fallback — not the submit path.
+
+### What we deliberately did not do
+
+- No mandatory UI or Amazon image fetch
+- No foundation-model fine-tune
+- No entropy ask policy that dropped Tech to ~0.72
+- No hard "missing word ⇒ delete product" filters that killed true ASINs
+
+In one line: ShopPilot turns messy multi-turn shopper language into state + hybrid retrieval + protocol-safe clarifying questions, so the right ASIN lands in the top 10 in fewer turns — offline, measurable, merchant-owned.

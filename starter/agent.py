@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 import sqlite3
 from dataclasses import dataclass, field
@@ -14,6 +15,13 @@ from pathlib import Path
 
 from starter.dense import DenseIndex, query_text_from_state
 from starter.llm_rerank import llm_enabled, rerank as llm_rerank
+from starter.llm_slots import (
+    apply_slot_parse,
+    llm_rerank_enabled,
+    llm_slots_mode,
+    parse_slots_llm,
+    should_call_slots_llm,
+)
 from starter.rewrite import rephrase_brief
 
 
@@ -789,7 +797,11 @@ class Agent:
         if state is None:
             raise RuntimeError("reset must be called before respond")
         state.messages.append(user_message)
+        filled_before = len(state.filled)
+        cons_before = len(state.constraints)
         self._ingest(state, user_message)
+        # Optional light-LLM dual-meaning / multi-slot normalizer (off by default).
+        self._maybe_llm_slots(state, user_message, filled_before, cons_before)
         # Retrieve first so clarification can maximize expected split on the live pool.
         ranked = self._retrieve(state, top_k=max(top_k, INFO_GAIN_TOP_N))
         ask = self._next_ask(state, turn, ranked)
@@ -854,6 +866,47 @@ class Agent:
         if re.search(r"\b\w{5,}\b", text):
             facets["feature"] = "present"
         return facets
+
+    def _maybe_llm_slots(
+        self,
+        state: SessionState,
+        user_message: str,
+        filled_before: int,
+        cons_before: int,
+    ) -> None:
+        """Optional dual-meaning slot parse. Never required for kit score path."""
+        mode = llm_slots_mode()
+        if mode == "off":
+            return
+        n_new = max(0, len(state.constraints) - cons_before)
+        call, conf = should_call_slots_llm(
+            mode,
+            user_message,
+            family=state.product_family,
+            audience=state.audience,
+            n_new_constraints=n_new,
+            filled_before=filled_before,
+        )
+        if os.environ.get("SHOPPILOT_LLM_DEBUG") == "1":
+            print(f"[llm_slots] mode={mode} conf={conf:.2f} call={call}")
+        if not call:
+            return
+        last_ask = state.asked[-1] if state.asked else None
+        parsed, pt, ct = parse_slots_llm(
+            user_message,
+            category=state.category,
+            family=state.product_family,
+            audience=state.audience,
+            filled=sorted(state.filled),
+            last_ask=last_ask,
+        )
+        state.prompt_tokens += pt
+        state.completion_tokens += ct
+        if not parsed:
+            return
+        applied = apply_slot_parse(state, parsed)
+        if os.environ.get("SHOPPILOT_LLM_DEBUG") == "1":
+            print(f"[llm_slots] applied={applied} parsed={parsed}")
 
     def _ingest(self, state: SessionState, message: str) -> None:
         text = message.strip()
@@ -1166,7 +1219,7 @@ class Agent:
             scored.append((asin, base))
         scored.sort(key=lambda item: item[1], reverse=True)
         scored = scored[: max(top_k, 20)]
-        if llm_enabled() and scored:
+        if llm_rerank_enabled() and scored:
             brief = rephrase_brief(
                 state.category,
                 state.constraints,

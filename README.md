@@ -101,7 +101,7 @@ From the repository root:
 
 ```bash
 # unit tests
-python -m unittest tests.test_agent_slots tests.test_rewrite tests.test_dense tests.test_evaluator -q
+python -m unittest tests.test_agent_slots tests.test_rewrite tests.test_dense tests.test_llm_slots tests.test_evaluator -q
 
 # official public metrics (writes results.json)
 export SHOPPILOT_DENSE=hash    # or none | minilm
@@ -118,14 +118,33 @@ when reporting scores.
 Agent entry point (required interface): `starter/agent.py` → class `Agent`
 (`reset` / `respond`).
 
-Optional LLM rerank (network; off by default):
+Optional light LLM (network; **off by default** — default path stays offline ~Tech 0.794):
 
 ```bash
 export SHOPPILOT_LLM=1
 export GEMINI_API_KEY=***          # or XAI_API_KEY
 export SHOPPILOT_GEMINI_MODEL=gemini-flash-latest
-python -m evaluator.local_evaluator
+
+# Dual-meaning / multi-slot normalizer (recommended experiment)
+export SHOPPILOT_LLM_SLOTS=lowconf   # or always | off
+# export SHOPPILOT_LLM_SLOTS_THRESHOLD=0.55
+# export SHOPPILOT_LLM_SLOTS_MIN_P=0.55
+
+# Separate: candidate rerank (slow; small MRR bump in past A/B)
+# export SHOPPILOT_LLM_RERANK=1
+
+python cli_chat.py --dense hash
+# or: python -m evaluator.local_evaluator
 ```
+
+| Flag | Default | Role |
+|---|---|---|
+| `SHOPPILOT_LLM_SLOTS=off` | **off** | No NLU calls |
+| `=always` | | One JSON slot parse **every** user turn |
+| `=lowconf` | | Call only when rule confidence is low (dual meanings / vague freeform) |
+| `SHOPPILOT_LLM_RERANK=1` | off | Rerank top candidates (independent of slots) |
+
+LLM output is validated against the official `ask_attribute` enum (+ internal family/audience). Failures fall back to rules. **Do not** submit a required-API path for judging.
 
 ## Limitations and what we would do with more time
 
@@ -138,8 +157,9 @@ python -m evaluator.local_evaluator
   Hit@10 from 0.80 → 0.97 and MTTC from 5.8 → 4.1 on the public set.
 - Ask *order* after `other` is static by design (pool max-IG ask policy dropped
   TechnicalScore on this simulator). Adaptivity is slot memory + retrieval.
-- LLM rerank is opt-in (`SHOPPILOT_LLM=1` + Gemini or xAI key). Without a key the
-  lexical/dense path still scores.
+- Optional LLM dual-meaning slot NLU (`SHOPPILOT_LLM_SLOTS=lowconf|always`) and
+  rerank (`SHOPPILOT_LLM_RERANK=1`) need a key and network. Default remains
+  pure lexical/dense. Validate public Tech ≥ ~0.794 before relying on LLM modes.
 - We did not use the private 800-session set. Public-set numbers can overfit.
 
 ## Team

@@ -1,29 +1,24 @@
-# ShopPilot — TechJam 2026 Conversational Shopping Agent
+# ShopPilot
 
-Track **4. Shopping Copilot**: a headless shopping agent that finds a hidden Amazon purchase in at most 10 turns.
+Multi-turn shopping agent for TechJam Track 4 (Shopping Copilot). Finds a hidden catalog purchase in ≤10 turns via structured clarification and hybrid retrieval.
 
-This repository starts from the official
-[TechJam conversational-search kit](https://github.com/TechJam2026/techjam-conversational-search)
-and replaces the weak BM25 starter with a **stateful hybrid retriever**. It uses
-the Python standard library only (no LLM, no GPU, no vector database).
+Built on the [official conversational-search kit](https://github.com/TechJam2026/techjam-conversational-search). Default path is **offline** (stdlib + optional NumPy hash dense). No required LLM, GPU, or vector DB.
 
-## Results on the public 200-session set
+## Public metrics (200 sessions)
 
-Official weak BM25 starter vs this agent (`python -m evaluator.local_evaluator`):
+`python -m evaluator.local_evaluator` with `SHOPPILOT_DENSE=hash`:
 
-| Metric | Starter BM25 | ShopPilot (hash) |
+| Metric | Starter BM25 | ShopPilot |
 |---|---:|---:|
-| Hit Rate@10 | 0.125 | **0.975** |
+| Hit@10 | 0.125 | **0.975** |
 | MRR | 0.068 | **0.872** |
 | MTTC | 9.81 | **3.01** |
 | Efficiency | 0.119 | **0.800** |
 | TechnicalScore | 0.107 | **0.909** |
 
-Default path is offline **hash** dense + rules (or `none` without NumPy). MiniLM is opt-in (`SHOPPILOT_DENSE=minilm`). Score stack: **margin-gated Top-K emission**, **other-first (+ optional second other)**, **category-tail**, **per-constraint evidence rank** (coverage×exact), **full-match jackpot**.
-
-TechnicalScore = `0.50×Hit@10 + 0.30×MRR + 0.20×clip((11−MTTC)/10, 0, 1)`.
-
-By scenario (hash default):
+```text
+TechnicalScore = 0.50·Hit@10 + 0.30·MRR + 0.20·clip((11 − MTTC) / 10, 0, 1)
+```
 
 | Scenario | N | Hit@10 | MRR | MTTC |
 |---|---:|---:|---:|---:|
@@ -32,160 +27,84 @@ By scenario (hash default):
 | Intent override | 30 | 0.967 | 0.867 | 4.20 |
 | Boundary | 10 | 1.000 | 0.933 | 3.10 |
 
-Token usage: **0** on lexical/dense paths.
+Token usage on the default path: **0**.
 
-Env knobs (defaults are the scored path):
+## Architecture
+
+```text
+user turn
+  → SessionState ingest     (slots, family, audience, override hygiene)
+  → hybrid retrieve         (FTS5 ∪ dense hash / optional MiniLM)
+  → rank                    (evidence coverage×exact + category-tail + priors)
+  → emit Top-K              (confidence margin policy)
+  → ask_attribute           (other-first ladder; one official field)
+  → { message, ask_attribute, recommendations, usage }
+```
+
+**State.** Constraints carry provenance `soft | disclosed | override`. Mind-change (“actually, ignore…”) drops soft prefs, keeps disclosed facts, blocks discarded tokens in FTS, and re-opens `other`.
+
+**Retrieve.** In-memory SQLite FTS5 (OR session terms + AND constraint lane) plus optional dense char-ngram hash (`starter/dense.py`). Catalog is frozen; no external search.
+
+**Rank.** Per-constraint token coverage and exact phrase match, category-tail bonus, product-family / gift-audience adapters, full-match jackpot, weak profile/rating priors. Linear feature fusion — not a trained cross-encoder.
+
+**Ask.** At most one kit `ask_attribute` per turn. Policy: `other` first (simulator catch-all, ≤2 hidden facts), optional second `other` while thin, then static order color → material → style → …. Max-entropy ask order was measured and rejected.
+
+**Emit.** First appearance of the true ASIN freezes Hit/MRR/MTTC. Default emission is **margin-gated**: Top-1 while `score(top1) − score(top2)` is small; Top-10 when the gap is large or turn ≥ force-widen. Optional fixed early Top-1 window if margin mode is off.
+
+**Interface.** `starter/agent.py` → `Agent.reset` / `Agent.respond`. Demo CLI: `cli_chat.py` (Astrid).
+
+## Quick start
+
+Python 3.10+. Default path needs no pip packages.
 
 ```bash
-export SHOPPILOT_PRECISION_GAP=10     # confidence margin; 0 = fixed turn window
-export SHOPPILOT_PRECISION_TURNS=0    # used only when gap=0
-export SHOPPILOT_FORCE_TOP10_TURN=4   # always full slate from this turn
+# Catalog (50k rows) from the official kit release
+gh release download participant-kit \
+  --repo TechJam2026/techjam-conversational-search \
+  --pattern catalog.jsonl.gz --dir data
+python -c "import gzip,shutil,pathlib; p=pathlib.Path('data'); shutil.copyfileobj(gzip.open(p/'catalog.jsonl.gz','rb'), (p/'catalog.jsonl').open('wb'))"
+
+export SHOPPILOT_DENSE=hash   # none | hash | auto | minilm
+python -m unittest discover -s tests -q
+python -m evaluator.local_evaluator
+python cli_chat.py --dense hash
+```
+
+Optional NumPy for the hash dense lane:
+
+```bash
+pip install "numpy>=1.24,<2.1"
+```
+
+Optional MiniLM dense (`sentence-transformers`) and optional LLM slots/rerank are env-gated and **off by default**. See `starter/llm_slots.py` / `starter/llm_rerank.py`.
+
+## Policy knobs (scored defaults)
+
+```bash
+export SHOPPILOT_DENSE=hash
+export SHOPPILOT_PRECISION_GAP=10      # margin for Top-10; 0 → fixed turn window
+export SHOPPILOT_PRECISION_TURNS=0     # used only when gap=0
+export SHOPPILOT_FORCE_TOP10_TURN=4
 export SHOPPILOT_OTHER_TWICE=1
 export SHOPPILOT_CATEGORY_TAIL=1
 export SHOPPILOT_EVIDENCE_RANK=1
-export SHOPPILOT_FULL_MATCH=8         # 0 disables full-match jackpot
+export SHOPPILOT_FULL_MATCH=8          # 0 disables
 ```
 
+## Layout
 
-## How it addresses the four pillars
-
-1. **Intent routing & hybrid pipeline.** Buying vs browsing is inferred from the
-   first message. Retrieval is multi-lane in-memory: FTS5 (OR over session terms,
-   AND over constraint tokens) plus an optional dense hashed char-ngram lane
-   (`starter/dense.py`, NumPy when available) for paraphrase recall/rerank,
-   then constraint-coverage scoring. MiniLM is opt-in via `SHOPPILOT_DENSE=minilm`.
-2. **Multi-turn state machine.** Slots accumulate with source tags
-   (`soft` / `disclosed` / `override`). `Actually, ignore my earlier preference`
-   erases only soft prefs (keeps already-disclosed hard facts the simulator will
-   not re-send), blocks discarded tokens from FTS, truncates pre-override
-   message history for retrieval, and resets `asked` so `other` can re-fire.
-   `I don't have a preference for X` marks `X` as don't-care (boundary).
-3. **Dynamic context / clarification.** The official simulator only reveals
-   hidden product constraints when `ask_attribute` is set. The agent always
-   returns a Top-10 **and** asks. The first question is `other` (simulator
-   catch-all that dumps remaining constraints). Later questions follow the
-   kit-tuned static order color → material → style → … (public-set A/B:
-   pure max-IG over the candidate pool *drops* TechnicalScore (historical ~0.72) because
-   high-entropy brand/store splits rarely match the simulator classifier).
-   Facet tags are still extracted per product so `message` can ground options
-   in the live pool (e.g. "black, navy, grey?").
-4. **Efficiency.** Asking and recommending on the same turn cuts MTTC. No model
-   API is required, so official scoring can run with network disabled.
-
-## Setup
-
-Python **3.10+** (tested on 3.13). No pip packages for the default path.
-
-Optional **dense hybrid lane** (auto when NumPy is installed; judges without
-NumPy get the stdlib FTS path):
-
-```bash
-pip install "numpy>=1.24,<2.1"          # hashed char-ngram backend
-# optional:
-# pip install sentence-transformers
-# export SHOPPILOT_DENSE=minilm
-
-export SHOPPILOT_DENSE=hash            # or none|auto|minilm
-python -m evaluator.local_evaluator
+```text
+starter/agent.py      Agent + SessionState + rank/ask/emit
+starter/dense.py      hash / MiniLM dense backends
+starter/rewrite.py    query brief helpers
+starter/llm_*.py      optional fail-open LLM hooks (default off)
+evaluator/            official local evaluator (do not modify for scoring)
+cli_chat.py           Astrid interactive demo
+tests/                unit tests
+docs/                 Devpost paste, API contract, kit rules
+data/                 public_set.jsonl; catalog.jsonl (local)
 ```
-
-Optional **LLM semantic rerank** (off unless you set both vars). Judges may disable network, so this only shuffles the already-retrieved top 20:
-
-```powershell
-$env:XAI_API_KEY = "xai-..."           # https://console.x.ai
-$env:SHOPPILOT_LLM = "1"
-python -m evaluator.local_evaluator
-```
-
-```bash
-git clone <this-repo> techjam-shopping-copilot
-cd techjam-shopping-copilot
-
-# Frozen 50k catalog from the official participant-kit release
-gh release download participant-kit --repo TechJam2026/techjam-conversational-search --pattern catalog.jsonl.gz --dir data
-python -c "import gzip,shutil,pathlib; p=pathlib.Path('data'); shutil.copyfileobj(gzip.open(p/'catalog.jsonl.gz','rb'), (p/'catalog.jsonl').open('wb'))"
-```
-
-Verify `data/SHA256SUMS` if you also download that file. Expected: 50,000 catalog rows.
-
-## Reproduce
-
-From the repository root:
-
-```bash
-# unit tests
-python -m unittest tests.test_agent_slots tests.test_rewrite tests.test_dense tests.test_llm_slots tests.test_evaluator -q
-
-# official public metrics (writes results.json)
-export SHOPPILOT_DENSE=hash    # or none | minilm
-python -m evaluator.local_evaluator
-
-# interactive demo — Astrid CLI (single brand UI)
-python cli_chat.py --dense hash
-```
-
-The evaluator writes `results.json` (gitignored) with per-session hits and the
-aggregate metrics above. Do not edit `evaluator/` or `data/public_set.jsonl`
-when reporting scores.
-
-Agent entry point (required interface): `starter/agent.py` → class `Agent`
-(`reset` / `respond`).
-
-Optional light LLM (network; **off by default** — default path stays offline ~Tech 0.909):
-
-```bash
-export SHOPPILOT_LLM=1
-export GEMINI_API_KEY=***          # or XAI_API_KEY
-export SHOPPILOT_GEMINI_MODEL=gemini-flash-latest
-
-# Dual-meaning / multi-slot normalizer (recommended experiment)
-export SHOPPILOT_LLM_SLOTS=lowconf   # or always | off
-# export SHOPPILOT_LLM_SLOTS_THRESHOLD=0.55
-# export SHOPPILOT_LLM_SLOTS_MIN_P=0.55
-
-# Separate: candidate rerank (slow; small MRR bump in past A/B)
-# export SHOPPILOT_LLM_RERANK=1
-
-python cli_chat.py --dense hash
-# or: python -m evaluator.local_evaluator
-```
-
-| Flag | Default | Role |
-|---|---|---|
-| `SHOPPILOT_LLM_SLOTS=off` | **off** | No NLU calls |
-| `=always` | | One JSON slot parse **every** user turn |
-| `=lowconf` | | Call only when rule confidence is low (dual meanings / vague freeform) |
-| `SHOPPILOT_LLM_RERANK=1` | off | Rerank top candidates (independent of slots) |
-
-LLM output is validated against the official `ask_attribute` enum (+ internal family/audience). Failures fall back to rules. **Do not** submit a required-API path for judging.
-
-## Limitations and what we would do with more time
-
-- Retrieval is hybrid lexical + optional dense. Near-paraphrases of a feature
-  sentence can still miss the exact `parent_asin` (~7% of public sessions).
-  `SHOPPILOT_DENSE=minilm` (local MiniLM over 50k titles) is the next step when
-  sentence-transformers is available; hash n-grams already recover some gaps.
-- Intent-override sessions cannot convert before turn 3–4 by protocol; MTTC on
-  that slice is structurally higher. Soft-only wipe + ask reset lifted override
-  Hit@10 from 0.80 → 0.97 and MTTC from 5.8 → 4.1 on the public set.
-- Ask *order* after `other` is static by design (pool max-IG ask policy dropped
-  TechnicalScore on this simulator). Adaptivity is slot memory + retrieval.
-- Optional LLM dual-meaning slot NLU (`SHOPPILOT_LLM_SLOTS=lowconf|always`) and
-  rerank (`SHOPPILOT_LLM_RERANK=1`) need a key and network. Default remains
-  pure lexical/dense. Validate public Tech ≥ ~0.909 before relying on LLM modes.
-- We did not use the private 800-session set. Public-set numbers can overfit.
-
-## Team
-
-Solo. All implementation, evaluation, and write-up by the submitting participant.
 
 ## Data
 
-Catalog and sessions are derived from Amazon Reviews 2023 (McAuley Lab, UCSD).
-See `DATA_ATTRIBUTION.md`. The catalog is read-only; no ASINs are injected.
-
-## Submission notes
-
-- Devpost paste-ready description: `docs/DEVPOST.md`
-- Demo video shot list (backend walkthrough): `docs/DEMO_VIDEO_SCRIPT.md`
-- Impact narrative (cited): `docs/REAL_WORLD_IMPACT.md`
+Catalog and sessions derive from Amazon Reviews 2023 (McAuley Lab, UCSD). See `DATA_ATTRIBUTION.md`. Catalog is read-only.

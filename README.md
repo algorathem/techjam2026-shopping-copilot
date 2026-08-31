@@ -11,15 +11,15 @@ the Python standard library only (no LLM, no GPU, no vector database).
 
 Official weak BM25 starter vs this agent (`python -m evaluator.local_evaluator`):
 
-| Metric | Starter BM25 | ShopPilot (hash) | + MiniLM opt-in |
-|---|---:|---:|---:|
-| Hit Rate@10 | 0.125 | **0.935** | 0.925 |
-| MRR | 0.068 | **0.558** | 0.574 |
-| MTTC | 9.81 | **3.03** | 3.04 |
-| Efficiency | 0.119 | **0.798** | 0.796 |
-| TechnicalScore | 0.107 | **0.794** | **0.794** |
+| Metric | Starter BM25 | ShopPilot (hash) |
+|---|---:|---:|
+| Hit Rate@10 | 0.125 | **0.970** |
+| MRR | 0.068 | **0.836** |
+| MTTC | 9.81 | **2.93** |
+| Efficiency | 0.119 | **0.807** |
+| TechnicalScore | 0.107 | **0.897** |
 
-Default / judge-friendly path is **hash** (or `none` without NumPy). MiniLM is explicit: `SHOPPILOT_DENSE=minilm` (needs `sentence-transformers`, first run embeds 50k once). Hash path includes weak long-term profile priors + catalog rating tie-breaks that scale down as session constraints accumulate (cold-start / tie-break only).
+Default path is offline **hash** dense + rules (or `none` without NumPy). MiniLM remains opt-in (`SHOPPILOT_DENSE=minilm`). Score lift vs earlier ~0.794 stack comes from peer-validated levers: **precision Top-1 for turns 1–2**, **category-tail exact bonus**, and a **second `other` ask** when evidence is still thin (each A/B’d; disable via env if needed).
 
 TechnicalScore = `0.50×Hit@10 + 0.30×MRR + 0.20×clip((11−MTTC)/10, 0, 1)`.
 
@@ -27,12 +27,20 @@ By scenario (hash default):
 
 | Scenario | N | Hit@10 | MRR | MTTC |
 |---|---:|---:|---:|---:|
-| Buying | 80 | 0.950 | 0.559 | 2.33 |
-| Browsing | 80 | 0.913 | 0.498 | 3.39 |
-| Intent override | 30 | 0.967 | 0.715 | 4.07 |
-| Boundary | 10 | 0.800 | 0.460 | 3.60 |
+| Buying | 80 | 0.975 | 0.833 | 2.54 |
+| Browsing | 80 | 0.963 | 0.816 | 2.85 |
+| Intent override | 30 | 0.967 | 0.866 | 4.17 |
+| Boundary | 10 | 1.000 | 0.933 | 3.00 |
 
 Token usage: **0** on lexical/dense paths.
+
+Env knobs (defaults are the scored path):
+
+```bash
+export SHOPPILOT_PRECISION_TURNS=2   # 0 disables Top-1 early turns
+export SHOPPILOT_OTHER_TWICE=1       # 0 disables second other
+export SHOPPILOT_CATEGORY_TAIL=1     # 0 disables tail bonus
+```
 
 ## How it addresses the four pillars
 
@@ -52,7 +60,7 @@ Token usage: **0** on lexical/dense paths.
    returns a Top-10 **and** asks. The first question is `other` (simulator
    catch-all that dumps remaining constraints). Later questions follow the
    kit-tuned static order color → material → style → … (public-set A/B:
-   pure max-IG over the candidate pool *drops* TechnicalScore ~0.03 because
+   pure max-IG over the candidate pool *drops* TechnicalScore (historical ~0.72) because
    high-entropy brand/store splits rarely match the simulator classifier).
    Facet tags are still extracted per product so `message` can ground options
    in the live pool (e.g. "black, navy, grey?").
@@ -118,7 +126,7 @@ when reporting scores.
 Agent entry point (required interface): `starter/agent.py` → class `Agent`
 (`reset` / `respond`).
 
-Optional light LLM (network; **off by default** — default path stays offline ~Tech 0.794):
+Optional light LLM (network; **off by default** — default path stays offline ~Tech 0.897):
 
 ```bash
 export SHOPPILOT_LLM=1
@@ -159,7 +167,7 @@ LLM output is validated against the official `ask_attribute` enum (+ internal fa
   TechnicalScore on this simulator). Adaptivity is slot memory + retrieval.
 - Optional LLM dual-meaning slot NLU (`SHOPPILOT_LLM_SLOTS=lowconf|always`) and
   rerank (`SHOPPILOT_LLM_RERANK=1`) need a key and network. Default remains
-  pure lexical/dense. Validate public Tech ≥ ~0.794 before relying on LLM modes.
+  pure lexical/dense. Validate public Tech ≥ ~0.897 before relying on LLM modes.
 - We did not use the private 800-session set. Public-set numbers can overfit.
 
 ## Team

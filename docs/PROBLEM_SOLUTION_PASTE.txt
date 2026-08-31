@@ -51,9 +51,9 @@ ShopPilot is a headless, offline-first multi-turn shopping agent (demo UI: Astri
 
 | | Weak BM25 starter | ShopPilot (hash default) |
 |---|---:|---:|
-| TechnicalScore | ~0.11 | ~0.794 |
-| Hit@10 | 0.125 | 0.935 |
-| MTTC | ~9.8 | ~3.0 |
+| TechnicalScore | ~0.11 | ~0.897 |
+| Hit@10 | 0.125 | 0.970 |
+| MTTC | ~9.8 | ~2.9 |
 
 Optional Gemini slot-NLU / rerank exists behind flags with rules fallback — not the submit path.
 

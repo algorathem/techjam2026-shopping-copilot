@@ -90,6 +90,13 @@ DENSE_WEIGHT_BY_BACKEND = {
 DENSE_SCORE_WEIGHT = 4.5  # default/fallback when backend unknown
 DENSE_RECALL_K = 80
 INFO_GAIN_TOP_N = 40
+# Peer-inspired (Unknownflow): first N turns emit Top-1 only so a premature
+# Top-10 hit doesn't lock a mediocre MRR (session ends at first hit).
+# Set SHOPPILOT_PRECISION_TURNS=0 to disable.
+PRECISION_TURNS_DEFAULT = 2
+# Strong bonus when session category terms ⊆ product category-tail terms.
+CATEGORY_TAIL_EXACT_BONUS = 10.0
+CATEGORY_TAIL_PARTIAL_BONUS = 2.5
 # Clarifying-question policy (public-set A/B):
 #   other-first + static ASK_ORDER  → Tech 0.753 baseline stack
 #   pure max pool info-gain         → Tech 0.720  (REJECT)
@@ -808,15 +815,37 @@ class Agent:
         if ask:
             state.asked.append(ask)
         message = self._compose_message(state, ask, ranked)
+        emit_k = self._emit_top_k(state, turn, top_k)
         return {
             "message": message,
             "ask_attribute": ask,
-            "recommendations": [{"parent_asin": asin, "score": score} for asin, score in ranked[:top_k]],
+            "recommendations": [
+                {"parent_asin": asin, "score": score} for asin, score in ranked[:emit_k]
+            ],
             "usage": {
                 "prompt_tokens": state.prompt_tokens,
                 "completion_tokens": state.completion_tokens,
             },
         }
+
+    def _precision_turns(self) -> int:
+        raw = os.environ.get("SHOPPILOT_PRECISION_TURNS", str(PRECISION_TURNS_DEFAULT))
+        try:
+            return max(0, int(raw))
+        except ValueError:
+            return PRECISION_TURNS_DEFAULT
+
+    def _emit_top_k(self, state: SessionState, turn: int, top_k: int) -> int:
+        """Narrow Top-K early (and the override turn) like peer precision policy."""
+        n = self._precision_turns()
+        if n <= 0:
+            return top_k
+        if turn <= n:
+            return 1
+        # One precision turn on the override message itself (not forever after).
+        if state.messages and OVERRIDE_RE.search(state.messages[-1] or ""):
+            return 1
+        return top_k
 
     @staticmethod
     def _extract_facets(blob: str, store: str, price: float | None, title: str) -> dict[str, str | None]:
@@ -1035,6 +1064,18 @@ class Agent:
         # `other` is the simulator catch-all: reveals up to two undisclosed
         # constraints of any type — highest protocol-level information gain.
         if "other" not in blocked:
+            return "other"
+        # Peer-style: allow a second `other` once when still thin on evidence
+        # (simulator can dump another pair of constraints). Off unless
+        # SHOPPILOT_OTHER_TWICE=1 (default ON for this experiment).
+        other_twice = os.environ.get("SHOPPILOT_OTHER_TWICE", "1") != "0"
+        if (
+            other_twice
+            and state.asked.count("other") == 1
+            and "other" not in state.dont_care
+            and turn <= 4
+            and len(state.constraints) < 4
+        ):
             return "other"
         candidates: list[str] = []
         for attr in ASK_ORDER:
@@ -1277,6 +1318,9 @@ class Agent:
         for token in _terms(state.category):
             if token in " ".join(c.lower() for c in product["categories"]):
                 score += 0.8
+        # Category-tail exactness (peer Unknownflow-style). Strong boost when
+        # shopper category terms sit in the most specific path segment(s).
+        score += self._category_tail_bonus(product, state)
         # Product-family intent: boost true category path, penalize conflicts
         # ("dress" garment vs "dress sandals" footwear).
         if state.product_family:
@@ -1310,6 +1354,43 @@ class Agent:
             rel = abs(product["price"] - budget) / max(budget, 1.0)
             score += 1.5 if rel < 0.35 else (-0.6 if rel > 1.5 else 0.0)
         return score
+
+    @staticmethod
+    def _category_tail(categories: list) -> str:
+        """Most specific non-root category segment (peer category-tail signal)."""
+        root = {"clothing, shoes & jewelry", "clothing shoes jewelry"}
+        for seg in reversed([str(c).strip() for c in (categories or []) if c]):
+            if seg.lower() in root:
+                continue
+            return seg.lower()
+        return ""
+
+    def _category_tail_bonus(self, product: dict, state: SessionState) -> float:
+        if os.environ.get("SHOPPILOT_CATEGORY_TAIL", "1") == "0":
+            return 0.0
+        cat_q = (state.category or "").strip().lower()
+        if not cat_q or len(cat_q) < 3:
+            return 0.0
+        cq = set(_terms(cat_q))
+        if not cq:
+            return 0.0
+        cats = product.get("categories") or []
+        tail = self._category_tail(cats)
+        path_terms: set[str] = set()
+        for c in cats:
+            path_terms.update(_terms(str(c)))
+        tail_terms = set(_terms(tail)) if tail else set()
+        # Exact: all query terms appear in the tail label.
+        if tail_terms and cq <= tail_terms:
+            return CATEGORY_TAIL_EXACT_BONUS
+        # Near-exact: all query terms on full path and ≥1 in tail.
+        if path_terms and cq <= path_terms and tail_terms and (cq & tail_terms):
+            return CATEGORY_TAIL_PARTIAL_BONUS + 1.5
+        if path_terms and cq <= path_terms:
+            return CATEGORY_TAIL_PARTIAL_BONUS
+        if tail_terms and (cq & tail_terms):
+            return 1.0
+        return 0.0
 
     def _session_specificity(self, state: SessionState) -> str:
         """How much short-term signal we have: cold | warm | hot."""

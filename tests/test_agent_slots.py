@@ -108,8 +108,38 @@ class SlotParserTest(unittest.TestCase):
 
     def test_static_order_after_other(self) -> None:
         self.state.asked.append("other")
-        ask = self.agent._next_ask(self.state, turn=2, ranked=[("A", 1.0)])
-        self.assertEqual(ask, "color")
+        # With SHOPPILOT_OTHER_TWICE (default on), a second other is allowed when
+        # evidence is still thin; disable for the classic ladder assertion.
+        import os
+
+        os.environ["SHOPPILOT_OTHER_TWICE"] = "0"
+        try:
+            ask = self.agent._next_ask(self.state, turn=2, ranked=[("A", 1.0)])
+            self.assertEqual(ask, "color")
+        finally:
+            os.environ.pop("SHOPPILOT_OTHER_TWICE", None)
+
+    def test_other_twice_when_thin(self) -> None:
+        import os
+
+        self.state.asked.append("other")
+        os.environ["SHOPPILOT_OTHER_TWICE"] = "1"
+        try:
+            ask = self.agent._next_ask(self.state, turn=2, ranked=[("A", 1.0)])
+            self.assertEqual(ask, "other")
+        finally:
+            os.environ.pop("SHOPPILOT_OTHER_TWICE", None)
+
+    def test_emit_top_k_precision_turns(self) -> None:
+        import os
+
+        os.environ["SHOPPILOT_PRECISION_TURNS"] = "2"
+        try:
+            self.assertEqual(self.agent._emit_top_k(self.state, turn=1, top_k=10), 1)
+            self.assertEqual(self.agent._emit_top_k(self.state, turn=2, top_k=10), 1)
+            self.assertEqual(self.agent._emit_top_k(self.state, turn=3, top_k=10), 10)
+        finally:
+            os.environ.pop("SHOPPILOT_PRECISION_TURNS", None)
 
     def test_pool_swap_helper_promotes_when_default_uncovered(self) -> None:
         self.agent._products = {

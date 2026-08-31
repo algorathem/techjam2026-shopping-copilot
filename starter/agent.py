@@ -93,7 +93,9 @@ INFO_GAIN_TOP_N = 40
 # Peer-inspired (Unknownflow): first N turns emit Top-1 only so a premature
 # Top-10 hit doesn't lock a mediocre MRR (session ends at first hit).
 # Set SHOPPILOT_PRECISION_TURNS=0 to disable.
-PRECISION_TURNS_DEFAULT = 2
+# Fixed Top-1 window only when margin gate is off (PRECISION_GAP=0).
+# With default gap>0, emission is margin-driven (see _emit_top_k).
+PRECISION_TURNS_DEFAULT = 0
 # Stay Top-1 until this many constraints even after precision turns (cap below).
 # 0 = disabled (fixed turn window only) — safer for MTTC on public set.
 PRECISION_MIN_CONS_DEFAULT = 0
@@ -116,8 +118,10 @@ EVIDENCE_SOFT_MULT = 1.0
 EVIDENCE_TITLE_EXACT = 6.0
 EVIDENCE_TITLE_COVERAGE = 2.0
 # Experimental MRR policies (default off unless noted; A/B via env).
-# Keep Top-1 while score(top1)-score(top2) < gap (0 = disabled).
-PRECISION_GAP_DEFAULT = 0.0
+# Keep Top-1 while score(top1)-score(top2) < gap.
+# Public A/B: gap=10 with FORCE_TOP10_TURN=4 → Tech 0.9081 → 0.9091 (MRR +0.012).
+# 0 disables margin mode and uses fixed PRECISION_TURNS only.
+PRECISION_GAP_DEFAULT = 10.0
 # Soft demote when a disclosed multi-token phrase is fully absent (0 = off).
 SOFT_MISS_PENALTY_DEFAULT = 0.0
 # Bonus when product fully covers all multi-token disclosed constraints.
@@ -890,38 +894,71 @@ class Agent:
         top_k: int,
         ranked: list[tuple[str, float]] | None = None,
     ) -> int:
-        """Narrow Top-K early until enough evidence (MRR-focused precision)."""
+        """Two-stage emission: Top-1 under uncertainty, Top-10 under conviction.
+
+        Default (PRECISION_GAP=0): fixed Top-1 for turns 1..N (ship path).
+        With SHOPPILOT_PRECISION_GAP>0: margin gate can widen early if
+        score(top1)-score(top2) is large, or force Top-1 while margin is small
+        (even after the fixed window), until turn cap.
+        """
         n = self._precision_turns()
         try:
-            min_cons = max(0, int(os.environ.get("SHOPPILOT_PRECISION_MIN_CONS", str(PRECISION_MIN_CONS_DEFAULT))))
+            min_cons = max(
+                0,
+                int(os.environ.get("SHOPPILOT_PRECISION_MIN_CONS", str(PRECISION_MIN_CONS_DEFAULT))),
+            )
         except ValueError:
             min_cons = PRECISION_MIN_CONS_DEFAULT
         try:
-            max_turn = max(n, int(os.environ.get("SHOPPILOT_PRECISION_MAX", str(PRECISION_MAX_TURN_DEFAULT))))
+            max_turn = max(
+                n if n > 0 else 2,
+                int(os.environ.get("SHOPPILOT_PRECISION_MAX", str(PRECISION_MAX_TURN_DEFAULT))),
+            )
         except ValueError:
             max_turn = PRECISION_MAX_TURN_DEFAULT
         try:
             gap = float(os.environ.get("SHOPPILOT_PRECISION_GAP", str(PRECISION_GAP_DEFAULT)))
         except ValueError:
             gap = PRECISION_GAP_DEFAULT
+        try:
+            force_top10_turn = int(os.environ.get("SHOPPILOT_FORCE_TOP10_TURN", "4"))
+        except ValueError:
+            force_top10_turn = 4
 
-        # Fixed early window.
+        # Late-game: always full slate (protect Hit near turn cap).
+        if turn >= force_top10_turn:
+            # Still Top-1 on the override utterance itself.
+            if state.messages and OVERRIDE_RE.search(state.messages[-1] or ""):
+                return 1
+            return top_k
+
+        margin = None
+        if ranked and len(ranked) >= 2:
+            margin = float(ranked[0][1]) - float(ranked[1][1])
+        elif ranked and len(ranked) == 1:
+            margin = float("inf")
+
+        rich = len(state.constraints) >= 2 or bool(state.product_family and state.category)
+
+        # --- Margin-gated mode (experimental) ---
+        if gap > 0:
+            # High conviction → full Top-10 even on turn 1 (MTTC win).
+            if margin is not None and margin >= gap and (rich or turn >= 2 or len(state.constraints) >= 1):
+                if state.messages and OVERRIDE_RE.search(state.messages[-1] or ""):
+                    return 1  # override turn still cautious
+                return top_k
+            # Low conviction → Top-1 to protect MRR and keep asking.
+            if turn <= max_turn:
+                return 1
+            return top_k
+
+        # --- Fixed-window mode (default ship) ---
         if n > 0 and turn <= n:
             return 1
-        # Adaptive: keep Top-1 while still light on constraints (capped).
         if n > 0 and turn <= max_turn and min_cons > 0 and len(state.constraints) < min_cons:
             return 1
-        # Score-gap gate: stay Top-1 while leaders are too close (uncertain).
-        if gap > 0 and ranked and len(ranked) >= 2 and turn <= max(max_turn, 6):
-            s0 = float(ranked[0][1])
-            s1 = float(ranked[1][1])
-            if (s0 - s1) < gap:
-                return 1
-        # One precision turn on the override message itself.
         if state.messages and OVERRIDE_RE.search(state.messages[-1] or ""):
             return 1
-        if n <= 0 and gap <= 0:
-            return top_k
         return top_k
 
     @staticmethod

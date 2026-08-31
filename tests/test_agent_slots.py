@@ -133,8 +133,9 @@ class SlotParserTest(unittest.TestCase):
     def test_emit_top_k_precision_turns(self) -> None:
         import os
 
+        # Fixed-window mode: gap off, turns=2
         os.environ["SHOPPILOT_PRECISION_TURNS"] = "2"
-        os.environ["SHOPPILOT_PRECISION_MIN_CONS"] = "0"  # disable adaptive stretch
+        os.environ["SHOPPILOT_PRECISION_MIN_CONS"] = "0"
         os.environ["SHOPPILOT_PRECISION_GAP"] = "0"
         try:
             self.assertEqual(self.agent._emit_top_k(self.state, turn=1, top_k=10), 1)
@@ -153,7 +154,7 @@ class SlotParserTest(unittest.TestCase):
         os.environ["SHOPPILOT_PRECISION_MAX"] = "5"
         os.environ["SHOPPILOT_PRECISION_GAP"] = "0"
         try:
-            self.state.constraints = ["black"]  # only 1
+            self.state.constraints = ["black"]
             self.assertEqual(self.agent._emit_top_k(self.state, turn=3, top_k=10), 1)
             self.state.constraints = ["black", "leather", "boots"]
             self.assertEqual(self.agent._emit_top_k(self.state, turn=3, top_k=10), 10)
@@ -169,19 +170,26 @@ class SlotParserTest(unittest.TestCase):
         os.environ["SHOPPILOT_PRECISION_TURNS"] = "0"
         os.environ["SHOPPILOT_PRECISION_GAP"] = "5.0"
         os.environ["SHOPPILOT_PRECISION_MAX"] = "6"
+        os.environ["SHOPPILOT_FORCE_TOP10_TURN"] = "4"
         try:
             ranked_close = [("A", 10.0), ("B", 9.5)]
             ranked_wide = [("A", 20.0), ("B", 5.0)]
+            self.state.constraints = ["black"]
             self.assertEqual(
-                self.agent._emit_top_k(self.state, turn=3, top_k=10, ranked=ranked_close), 1
+                self.agent._emit_top_k(self.state, turn=2, top_k=10, ranked=ranked_close), 1
             )
             self.assertEqual(
-                self.agent._emit_top_k(self.state, turn=3, top_k=10, ranked=ranked_wide), 10
+                self.agent._emit_top_k(self.state, turn=2, top_k=10, ranked=ranked_wide), 10
+            )
+            # force top10 by turn
+            self.assertEqual(
+                self.agent._emit_top_k(self.state, turn=4, top_k=10, ranked=ranked_close), 10
             )
         finally:
             os.environ.pop("SHOPPILOT_PRECISION_TURNS", None)
             os.environ.pop("SHOPPILOT_PRECISION_GAP", None)
             os.environ.pop("SHOPPILOT_PRECISION_MAX", None)
+            os.environ.pop("SHOPPILOT_FORCE_TOP10_TURN", None)
 
     def test_pool_swap_helper_promotes_when_default_uncovered(self) -> None:
         self.agent._products = {

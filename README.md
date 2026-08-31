@@ -100,15 +100,32 @@ Verify `data/SHA256SUMS` if you also download that file. Expected: 50,000 catalo
 From the repository root:
 
 ```bash
-python -m unittest tests.test_agent_slots tests.test_evaluator -q
+# unit tests
+python -m unittest tests.test_agent_slots tests.test_rewrite tests.test_dense tests.test_evaluator -q
+
+# official public metrics (writes results.json)
+export SHOPPILOT_DENSE=hash    # or none | minilm
 python -m evaluator.local_evaluator
+
+# interactive backend demo (no UI required for the track)
+python cli_chat.py --dense hash
 ```
 
 The evaluator writes `results.json` (gitignored) with per-session hits and the
 aggregate metrics above. Do not edit `evaluator/` or `data/public_set.jsonl`
 when reporting scores.
 
-Agent entry point (required interface): `starter/agent.py` → class `Agent`.
+Agent entry point (required interface): `starter/agent.py` → class `Agent`
+(`reset` / `respond`).
+
+Optional LLM rerank (network; off by default):
+
+```bash
+export SHOPPILOT_LLM=1
+export GEMINI_API_KEY=***          # or XAI_API_KEY
+export SHOPPILOT_GEMINI_MODEL=gemini-flash-latest
+python -m evaluator.local_evaluator
+```
 
 ## Limitations and what we would do with more time
 
@@ -119,8 +136,10 @@ Agent entry point (required interface): `starter/agent.py` → class `Agent`.
 - Intent-override sessions cannot convert before turn 3–4 by protocol; MTTC on
   that slice is structurally higher. Soft-only wipe + ask reset lifted override
   Hit@10 from 0.80 → 0.97 and MTTC from 5.8 → 4.1 on the public set.
-- LLM rerank is opt-in (`SHOPPILOT_LLM=1` + `XAI_API_KEY`). Without a key the
-  lexical path still scores. Mean hit rank is ~3.6; rerank is aimed at MRR.
+- Ask *order* after `other` is static by design (pool max-IG ask policy dropped
+  TechnicalScore on this simulator). Adaptivity is slot memory + retrieval.
+- LLM rerank is opt-in (`SHOPPILOT_LLM=1` + Gemini or xAI key). Without a key the
+  lexical/dense path still scores.
 - We did not use the private 800-session set. Public-set numbers can overfit.
 
 ## Team
@@ -131,3 +150,9 @@ Solo. All implementation, evaluation, and write-up by the submitting participant
 
 Catalog and sessions are derived from Amazon Reviews 2023 (McAuley Lab, UCSD).
 See `DATA_ATTRIBUTION.md`. The catalog is read-only; no ASINs are injected.
+
+## Submission notes
+
+- Devpost paste-ready description: `docs/DEVPOST.md`
+- Demo video shot list (backend walkthrough): `docs/DEMO_VIDEO_SCRIPT.md`
+- Impact narrative (cited): `docs/REAL_WORLD_IMPACT.md`

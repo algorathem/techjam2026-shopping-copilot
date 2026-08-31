@@ -1,31 +1,44 @@
 """Optional LLM semantic rerank of a short candidate list.
 
-Official scoring may disable network, so this is gated on XAI_API_KEY and
-never required. Failures return None and the caller keeps lexical order.
+Official scoring may disable network, so this is gated and never required.
+Failures return None and the caller keeps lexical/dense order.
 
-Uses SpaceXAI (xAI) OpenAI-compatible chat completions via stdlib urllib.
+Providers (first match wins):
+  - GEMINI_API_KEY + SHOPPILOT_LLM=1  → Google Gemini generateContent
+  - XAI_API_KEY + SHOPPILOT_LLM=1     → xAI OpenAI-compatible chat
+
+Never commit API keys. Prefer env vars only for local experiments.
 """
 from __future__ import annotations
 
 import json
 import os
 import urllib.error
+import urllib.parse
 import urllib.request
 
 
-API_URL = "https://api.x.ai/v1/chat/completions"
-DEFAULT_MODEL = os.environ.get("SHOPPILOT_LLM_MODEL", "grok-4.5")
+XAI_API_URL = "https://api.x.ai/v1/chat/completions"
+XAI_DEFAULT_MODEL = os.environ.get("SHOPPILOT_LLM_MODEL", "grok-4.5")
+GEMINI_DEFAULT_MODEL = os.environ.get(
+    "SHOPPILOT_GEMINI_MODEL",
+    os.environ.get("SHOPPILOT_LLM_MODEL", "gemini-flash-latest"),
+)
 
 
 def llm_enabled() -> bool:
-    return bool(os.environ.get("XAI_API_KEY")) and os.environ.get("SHOPPILOT_LLM", "0") == "1"
+    if os.environ.get("SHOPPILOT_LLM", "0") != "1":
+        return False
+    return bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("XAI_API_KEY"))
 
 
 def rerank(brief: str, candidates: list[dict], top_k: int = 10) -> tuple[list[str] | None, int, int]:
     """Return (asin_order, prompt_tokens, completion_tokens) or (None, 0, 0)."""
-    key = os.environ.get("XAI_API_KEY")
-    if not key or not candidates:
+    if not candidates:
         return None, 0, 0
+    if os.environ.get("SHOPPILOT_LLM", "0") != "1":
+        return None, 0, 0
+
     lines = []
     for idx, item in enumerate(candidates, start=1):
         title = str(item.get("title") or "")[:140]
@@ -39,23 +52,100 @@ def rerank(brief: str, candidates: list[dict], top_k: int = 10) -> tuple[list[st
         "strings, most relevant first, no extras.\n"
         + "\n".join(lines)
     )
+    system = (
+        "You rerank catalog products for a shopping assistant. "
+        "Prefer exact attribute matches (material, color, category) "
+        "over popularity. Output a JSON array of parent_asin only."
+    )
+    allowed = {c["parent_asin"] for c in candidates}
+
+    gemini_key = os.environ.get("GEMINI_API_KEY")
+    if gemini_key:
+        return _rerank_gemini(system, user, allowed, top_k, gemini_key)
+
+    xai_key = os.environ.get("XAI_API_KEY")
+    if xai_key:
+        return _rerank_xai(system, user, allowed, top_k, xai_key)
+
+    return None, 0, 0
+
+
+def _rerank_gemini(
+    system: str,
+    user: str,
+    allowed: set[str],
+    top_k: int,
+    key: str,
+) -> tuple[list[str] | None, int, int]:
+    model = GEMINI_DEFAULT_MODEL
+    # Prefer v1beta generateContent
+    url = (
+        f"https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{urllib.parse.quote(model, safe='')}:generateContent"
+        f"?key={urllib.parse.quote(key, safe='')}"
+    )
     payload = {
-        "model": DEFAULT_MODEL,
+        "systemInstruction": {"parts": [{"text": system}]},
+        "contents": [{"role": "user", "parts": [{"text": user}]}],
+        "generationConfig": {
+            "temperature": 0,
+            "maxOutputTokens": 512,
+        },
+    }
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            body = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError) as exc:
+        # Surface once for smoke tests via env
+        if os.environ.get("SHOPPILOT_LLM_DEBUG") == "1":
+            print(f"[gemini_rerank] error: {type(exc).__name__}: {exc}")
+        return None, 0, 0
+
+    prompt_tokens = 0
+    completion_tokens = 0
+    usage = body.get("usageMetadata") or {}
+    prompt_tokens = int(usage.get("promptTokenCount") or 0)
+    completion_tokens = int(usage.get("candidatesTokenCount") or 0)
+
+    try:
+        parts = body["candidates"][0]["content"]["parts"]
+        content = "".join(str(p.get("text") or "") for p in parts)
+    except (KeyError, IndexError, TypeError):
+        if os.environ.get("SHOPPILOT_LLM_DEBUG") == "1":
+            print(f"[gemini_rerank] bad body keys: {list(body.keys())[:12]}")
+        return None, prompt_tokens, completion_tokens
+
+    order = _parse_asins(content, allowed)
+    if not order:
+        if os.environ.get("SHOPPILOT_LLM_DEBUG") == "1":
+            print(f"[gemini_rerank] parse fail content={content[:200]!r}")
+        return None, prompt_tokens, completion_tokens
+    return order[:top_k], prompt_tokens, completion_tokens
+
+
+def _rerank_xai(
+    system: str,
+    user: str,
+    allowed: set[str],
+    top_k: int,
+    key: str,
+) -> tuple[list[str] | None, int, int]:
+    payload = {
+        "model": XAI_DEFAULT_MODEL,
         "temperature": 0,
         "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "You rerank catalog products for a shopping assistant. "
-                    "Prefer exact attribute matches (material, color, category) "
-                    "over popularity. Output a JSON array of parent_asin only."
-                ),
-            },
+            {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
     }
     request = urllib.request.Request(
-        API_URL,
+        XAI_API_URL,
         data=json.dumps(payload).encode("utf-8"),
         headers={
             "Authorization": f"Bearer {key}",
@@ -75,7 +165,7 @@ def rerank(brief: str, candidates: list[dict], top_k: int = 10) -> tuple[list[st
         content = body["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError):
         return None, prompt_tokens, completion_tokens
-    order = _parse_asins(content, {c["parent_asin"] for c in candidates})
+    order = _parse_asins(content, allowed)
     if not order:
         return None, prompt_tokens, completion_tokens
     return order[:top_k], prompt_tokens, completion_tokens
@@ -83,6 +173,9 @@ def rerank(brief: str, candidates: list[dict], top_k: int = 10) -> tuple[list[st
 
 def _parse_asins(content: str, allowed: set[str]) -> list[str]:
     text = content.strip()
+    # Strip markdown fences if present
+    if "```" in text:
+        text = text.replace("```json", "```").replace("```", "\n")
     start = text.find("[")
     end = text.rfind("]")
     blob = text[start : end + 1] if start >= 0 and end > start else text

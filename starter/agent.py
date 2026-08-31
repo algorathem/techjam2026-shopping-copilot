@@ -920,6 +920,24 @@ class Agent:
             gap = float(os.environ.get("SHOPPILOT_PRECISION_GAP", str(PRECISION_GAP_DEFAULT)))
         except ValueError:
             gap = PRECISION_GAP_DEFAULT
+        # Optional per-turn thresholds: "1:12,2:10,3:8,default:10"
+        # Overrides `gap` when present for that turn (hidden pattern / schedule).
+        schedule_raw = os.environ.get("SHOPPILOT_PRECISION_GAP_SCHEDULE", "").strip()
+        if schedule_raw:
+            sched: dict[str, float] = {}
+            for part in schedule_raw.split(","):
+                part = part.strip()
+                if not part or ":" not in part:
+                    continue
+                k, v = part.split(":", 1)
+                try:
+                    sched[k.strip().lower()] = float(v.strip())
+                except ValueError:
+                    continue
+            if str(turn) in sched:
+                gap = sched[str(turn)]
+            elif "default" in sched:
+                gap = sched["default"]
         try:
             force_top10_turn = int(os.environ.get("SHOPPILOT_FORCE_TOP10_TURN", "4"))
         except ValueError:

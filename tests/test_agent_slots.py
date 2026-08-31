@@ -192,6 +192,39 @@ class SlotParserTest(unittest.TestCase):
         self.assertNotEqual(ask, "size")
 
 
+    def test_audience_son_not_womens(self) -> None:
+        from starter.agent import infer_audience, product_audience_match
+
+        self.assertEqual(infer_audience("shoes for my son"), "boys")
+        self.assertEqual(infer_audience("for my daughter"), "girls")
+        self.assertEqual(infer_audience("gift for him"), "men")
+        self.assertEqual(infer_audience("for my wife"), "women")
+        # Kit category openings must NOT set audience ("looking for Women Dresses").
+        self.assertIsNone(infer_audience("I'm looking for Women Dresses, but I'm still exploring."))
+        self.assertIsNone(infer_audience("I'm looking for Men Pants."))
+        self.assertIsNone(infer_audience("women's size 8"))
+        self.assertIsNone(infer_audience("for women"))  # too bare / category-like
+        self.assertIsNone(infer_audience("for men"))
+        women_prod = {
+            "title": "Women's Running Shoe",
+            "categories": ["Women", "Shoes", "Fashion Sneakers"],
+        }
+        men_prod = {
+            "title": "Men's Trail Boot",
+            "categories": ["Men", "Shoes", "Boots"],
+        }
+        boys_prod = {
+            "title": "Boys Athletic Sneaker",
+            "categories": ["Boys", "Shoes"],
+        }
+        self.assertEqual(product_audience_match(women_prod, "boys"), "miss")
+        self.assertEqual(product_audience_match(boys_prod, "boys"), "hit")
+        self.assertEqual(product_audience_match(men_prod, "men"), "hit")
+
+        self.agent._ingest(self.state, "I'm looking for shoes for my son")
+        self.assertEqual(self.state.audience, "boys")
+        self.assertEqual(self.state.product_family, "footwear")
+
     def test_vibe_words_map_to_style(self) -> None:
         for vibe in ("cool", "cute", "professional", "elegant", "chic", "sporty"):
             self.assertEqual(classify_constraint(vibe), "style", vibe)

@@ -110,6 +110,125 @@ OVERRIDE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Audience / gender is NOT an official ask_attribute. Track internally
+# like product_family. ONLY explicit gift/relationship phrasing:
+#   "for my son", "for him", "for my daughter", ...
+# Do NOT match kit category lines like "looking for Women Dresses"
+# (that false-fired on "for Women" and cost ~0.01 Tech).
+_AUDIENCE_RULES: list[tuple[str, re.Pattern[str]]] = [
+    (
+        "boys",
+        re.compile(
+            r"\b(for\s+my\s+son|for\s+(?:my\s+)?(?:little\s+)?boy|"
+            r"my\s+son'?s?(?:\s+(?:size|shoes?|shirt))?|"
+            r"son'?s?\s+(?:size|shoes?|shirt))\b",
+            re.I,
+        ),
+    ),
+    (
+        "girls",
+        re.compile(
+            r"\b(for\s+my\s+daughter|for\s+(?:my\s+)?(?:little\s+)?girl|"
+            r"my\s+daughter'?s?(?:\s+(?:size|shoes?|dress))?|"
+            r"daughter'?s?\s+(?:size|shoes?|dress))\b",
+            re.I,
+        ),
+    ),
+    (
+        "unisex_kids",
+        re.compile(
+            r"\b(for\s+my\s+kids?|for\s+my\s+children|for\s+the\s+kids?)\b",
+            re.I,
+        ),
+    ),
+    (
+        "men",
+        re.compile(
+            r"\b(for\s+my\s+husband|for\s+my\s+dad|for\s+my\s+boyfriend|"
+            r"for\s+him\b|gift\s+for\s+him)\b",
+            re.I,
+        ),
+    ),
+    (
+        "women",
+        re.compile(
+            r"\b(for\s+my\s+wife|for\s+my\s+mom|for\s+my\s+girlfriend|"
+            r"for\s+her\b|gift\s+for\s+her)\b",
+            re.I,
+        ),
+    ),
+]
+
+
+def infer_audience(text: str) -> str | None:
+    """Return men|women|boys|girls|unisex_kids or None from free text."""
+    if not text:
+        return None
+    # Prefer more specific (son/daughter) by rule order above.
+    for label, pattern in _AUDIENCE_RULES:
+        if pattern.search(text):
+            # Disambiguate bare "for him" already in boys/men — first match wins.
+            return label
+    return None
+
+
+def product_audience_match(product: dict, audience: str) -> str:
+    """hit | miss | unknown for product vs intended audience."""
+    if not audience:
+        return "unknown"
+    cats = " ".join(c.lower() for c in (product.get("categories") or []))
+    title = (product.get("title") or "").lower()
+    # Drop noisy root
+    cats = re.sub(r"clothing,\s*shoes\s*&\s*jewelry", " ", cats)
+    blob = cats + " " + title
+
+    has_men = bool(re.search(r"\b(men|man's|mens|male)\b", blob))
+    has_women = bool(re.search(r"\b(women|woman'?s|womens|ladies|female)\b", blob))
+    has_boys = bool(re.search(r"\b(boys?|boy'?s)\b", blob))
+    has_girls = bool(re.search(r"\b(girls?|girl'?s)\b", blob))
+    has_kids = bool(re.search(r"\b(kids?|children|toddler|youth|baby)\b", blob))
+
+    if audience == "men":
+        if has_men and not has_women:
+            return "hit"
+        if has_women and not has_men:
+            return "miss"
+        if has_boys or has_girls:
+            return "miss"
+        return "unknown"
+    if audience == "women":
+        if has_women and not has_men:
+            return "hit"
+        if has_men and not has_women:
+            return "miss"
+        if has_boys or has_girls:
+            return "miss"
+        return "unknown"
+    if audience == "boys":
+        if has_boys or (has_kids and not has_girls and not has_women):
+            return "hit"
+        # men's adult often wrong for "son" but better than women's
+        if has_women or has_girls:
+            return "miss"
+        if has_men and not has_kids:
+            return "unknown"  # adult men — weak, don't hard-miss
+        return "unknown"
+    if audience == "girls":
+        if has_girls or (has_kids and not has_boys and not has_men):
+            return "hit"
+        if has_men or has_boys:
+            return "miss"
+        if has_women and not has_kids:
+            return "unknown"
+        return "unknown"
+    if audience == "unisex_kids":
+        if has_kids or has_boys or has_girls:
+            return "hit"
+        if (has_men or has_women) and not has_kids:
+            return "miss"
+        return "unknown"
+    return "unknown"
+
 # Coarse product-family intent. Token "dress" alone matches footwear
 # ("dress sandals"); family routing separates garment vs shoe senses.
 FAMILY_PATTERNS: list[tuple[str, tuple[re.Pattern[str], ...]]] = [
@@ -478,6 +597,7 @@ class SessionState:
     profile: dict
     category: str = ""
     product_family: str | None = None
+    audience: str | None = None  # men|women|boys|girls|unisex_kids (internal only)
     constraints: list[str] = field(default_factory=list)
     # Parallel to constraints: "soft" (pre-override free text) | "disclosed" | "override"
     constraint_sources: list[str] = field(default_factory=list)
@@ -760,6 +880,19 @@ class Agent:
                     if re.search(rf"\b{token}\b", text, flags=re.I):
                         state.category = token
                         break
+        # Audience / gender from any turn ("for my son", "women's", …).
+        aud = infer_audience(text)
+        if aud:
+            state.audience = aud
+            # Keep a soft constraint so FTS also sees boys/men/women tokens.
+            label = {
+                "men": "men's",
+                "women": "women's",
+                "boys": "boys",
+                "girls": "girls",
+                "unisex_kids": "kids",
+            }.get(aud, aud)
+            state.add_constraint(label, source="soft")
         if re.search(r"still exploring", text, re.I):
             state.browsing = True
         if re.search(r"key requirement is", text, re.I):
@@ -1099,7 +1232,15 @@ class Agent:
                 score += 6.5
             elif match == "miss":
                 score -= 8.0
-
+        # Audience / gender (for my son → not women's). Strong demote, not hard delete.
+        if state.audience:
+            am = product_audience_match(product, state.audience)
+            if am == "hit":
+                score += 4.0
+            elif am == "miss":
+                # Softer than first try (-9 hurt public Tech); still enough to
+                # bury clear women's items when audience is boys/son.
+                score -= 5.5
         # --- Long-term profile prior (weak; short-term constraints always dominate) ---
         score += self._profile_prior(product, state, text, tags)
 

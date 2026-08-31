@@ -94,9 +94,21 @@ INFO_GAIN_TOP_N = 40
 # Top-10 hit doesn't lock a mediocre MRR (session ends at first hit).
 # Set SHOPPILOT_PRECISION_TURNS=0 to disable.
 PRECISION_TURNS_DEFAULT = 2
+# Stay Top-1 until this many constraints even after precision turns (cap below).
+# 0 = disabled (fixed turn window only) — safer for MTTC on public set.
+PRECISION_MIN_CONS_DEFAULT = 0
+PRECISION_MAX_TURN_DEFAULT = 5
 # Strong bonus when session category terms ⊆ product category-tail terms.
 CATEGORY_TAIL_EXACT_BONUS = 10.0
 CATEGORY_TAIL_PARTIAL_BONUS = 2.5
+# Super-linear bonus when 2+ disclosed/session phrases exact-match product text.
+COMBO_EXACT_BASE = 3.0
+COMBO_EXACT_STEP = 2.5
+# Peer-style per-constraint coverage/exact (Unknownflow). Dominant MRR lever.
+EVIDENCE_COVERAGE_W = 12.0
+EVIDENCE_EXACT_W = 14.0
+EVIDENCE_MATCH_W = 0.35
+EVIDENCE_INDEX_STEP = 0.18
 # Clarifying-question policy (public-set A/B):
 #   other-first + static ASK_ORDER  → Tech 0.753 baseline stack
 #   pure max pool info-gain         → Tech 0.720  (REJECT)
@@ -408,6 +420,10 @@ def _terms(text: str, *, keep_stop: bool = False) -> list[str]:
     if keep_stop:
         return [token for token in tokens if len(token) > 1]
     return [token for token in tokens if len(token) > 1 and token not in STOPWORDS]
+
+
+def _normal_phrase(text: str) -> str:
+    return " ".join(_terms(text or ""))
 
 
 def classify_constraint(value: str) -> str:
@@ -836,13 +852,25 @@ class Agent:
             return PRECISION_TURNS_DEFAULT
 
     def _emit_top_k(self, state: SessionState, turn: int, top_k: int) -> int:
-        """Narrow Top-K early (and the override turn) like peer precision policy."""
+        """Narrow Top-K early until enough evidence (MRR-focused precision)."""
         n = self._precision_turns()
         if n <= 0:
             return top_k
+        try:
+            min_cons = max(0, int(os.environ.get("SHOPPILOT_PRECISION_MIN_CONS", str(PRECISION_MIN_CONS_DEFAULT))))
+        except ValueError:
+            min_cons = PRECISION_MIN_CONS_DEFAULT
+        try:
+            max_turn = max(n, int(os.environ.get("SHOPPILOT_PRECISION_MAX", str(PRECISION_MAX_TURN_DEFAULT))))
+        except ValueError:
+            max_turn = PRECISION_MAX_TURN_DEFAULT
+
         if turn <= n:
             return 1
-        # One precision turn on the override message itself (not forever after).
+        # Adaptive: keep Top-1 while still light on constraints (capped).
+        if turn <= max_turn and len(state.constraints) < min_cons:
+            return 1
+        # One precision turn on the override message itself.
         if state.messages and OVERRIDE_RE.search(state.messages[-1] or ""):
             return 1
         return top_k
@@ -1299,22 +1327,28 @@ class Agent:
         title = product["title"].lower()
         # sqlite bm25: more negative is better
         score = -bm25
-        for phrase in phrases:
-            if not phrase:
-                continue
-            needle = phrase.lower()
-            if needle in text:
-                score += 4.5
-                if needle in title:
+        # Primary evidence ranker (peer-style): per-constraint coverage + exact
+        # phrase match with position weights. Replaces flat +4.5 phrase loops
+        # as the main MRR driver when SHOPPILOT_EVIDENCE_RANK=1 (default).
+        if os.environ.get("SHOPPILOT_EVIDENCE_RANK", "1") != "0":
+            score += self._evidence_rank_score(product, state, phrases)
+        else:
+            for phrase in phrases:
+                if not phrase:
+                    continue
+                needle = phrase.lower()
+                if needle in text:
+                    score += 4.5
+                    if needle in title:
+                        score += 2.0
+                    continue
+                tokens = _terms(phrase)[:10]
+                if not tokens:
+                    continue
+                hits = sum(1 for token in tokens if token in text)
+                score += 1.6 * (hits / len(tokens))
+                if hits == len(tokens) and len(tokens) >= 2:
                     score += 2.0
-                continue
-            tokens = _terms(phrase)[:10]
-            if not tokens:
-                continue
-            hits = sum(1 for token in tokens if token in text)
-            score += 1.6 * (hits / len(tokens))
-            if hits == len(tokens) and len(tokens) >= 2:
-                score += 2.0
         for token in _terms(state.category):
             if token in " ".join(c.lower() for c in product["categories"]):
                 score += 0.8
@@ -1353,7 +1387,133 @@ class Agent:
         if budget is not None and product["price"]:
             rel = abs(product["price"] - budget) / max(budget, 1.0)
             score += 1.5 if rel < 0.35 else (-0.6 if rel > 1.5 else 0.0)
+
+        # Multi-constraint exact combo (legacy flag; mild add-on when evidence rank on)
+        if os.environ.get("SHOPPILOT_EXACT_COMBO", "0") == "1":
+            score += self._exact_combo_bonus(product, state, phrases)
         return score
+
+    def _evidence_rank_score(
+        self,
+        product: dict,
+        state: SessionState,
+        phrases: list[str],
+    ) -> float:
+        """Unknownflow-style: weight * (coverage*12 + exact*14 + |matched|*0.35)."""
+        full = (product.get("text") or "").lower()
+        if not full:
+            return 0.0
+        doc_tokens = set(_terms(full))
+        # Prefer disclosed constraints ordered; else all session constraints.
+        ordered: list[tuple[str, str | None]] = []  # (phrase, kind)
+        for i, c in enumerate(state.constraints):
+            src = state.constraint_sources[i] if i < len(state.constraint_sources) else "soft"
+            kind = classify_constraint(c)
+            ordered.append((c, kind if src else kind))
+        if not ordered and state.category:
+            ordered.append((state.category, "category"))
+        # If only soft phrases in `phrases` beyond constraints, skip extras
+        # already covered.
+        score = 0.0
+        for index, (constraint, slot_kind) in enumerate(ordered):
+            scoring_terms = _terms(constraint)
+            if slot_kind == "color":
+                scoring_terms = [t for t in scoring_terms if t != "color"]
+            query = set(scoring_terms)
+            if not query:
+                continue
+            matched = query & doc_tokens
+            coverage = len(matched) / len(query)
+            normalized = " ".join(scoring_terms)
+            tail = self._category_tail(product.get("categories") or [])
+            canonical_category = (
+                slot_kind == "category"
+                and _normal_phrase(constraint) == _normal_phrase(tail)
+            )
+            exact = 1.0 if (
+                canonical_category
+                if slot_kind == "category"
+                else (normalized in full)
+            ) else 0.0
+            weight = 1.0 + index * EVIDENCE_INDEX_STEP
+            score += weight * (
+                coverage * EVIDENCE_COVERAGE_W
+                + exact * EVIDENCE_EXACT_W
+                + len(matched) * EVIDENCE_MATCH_W
+            )
+            if canonical_category:
+                score += CATEGORY_TAIL_EXACT_BONUS * 0.5  # half here; full still via tail bonus
+        return score
+
+    def _exact_combo_bonus(
+        self,
+        product: dict,
+        state: SessionState,
+        phrases: list[str],
+    ) -> float:
+        if os.environ.get("SHOPPILOT_EXACT_COMBO", "1") == "0":
+            return 0.0
+        text = (product.get("text") or "").lower()
+        title = (product.get("title") or "").lower()
+        if not text:
+            return 0.0
+
+        # Prefer disclosed constraints; fall back to all session constraints.
+        disclosed: list[str] = []
+        soft: list[str] = []
+        for i, c in enumerate(state.constraints):
+            src = "soft"
+            if i < len(state.constraint_sources):
+                src = state.constraint_sources[i] or "soft"
+            (disclosed if src in {"disclosed", "override"} else soft).append(c)
+
+        pool = disclosed if len(disclosed) >= 2 else list(state.constraints)
+        # Also consider multi-token category as one evidence unit when specific.
+        cat = (state.category or "").strip()
+        if cat and len(_terms(cat)) >= 2 and cat.lower() not in {p.lower() for p in pool}:
+            pool = [cat, *pool]
+
+        exact = 0
+        title_exact = 0
+        hard_miss = 0
+        checked = 0
+        for phrase in pool:
+            if not phrase:
+                continue
+            needle = phrase.lower().strip()
+            if len(needle) < 3:
+                continue
+            # Skip ultra-generic single tokens that match half the catalog.
+            toks = _terms(needle)
+            if len(toks) == 1 and toks[0] in {
+                "size", "color", "style", "brand", "men", "women", "kids", "new",
+            }:
+                continue
+            checked += 1
+            if needle in text or (toks and all(t in text for t in toks[:6])):
+                exact += 1
+                if needle in title or (toks and all(t in title for t in toks[:6])):
+                    title_exact += 1
+            else:
+                # Only count miss for multi-token or long specific phrases.
+                if len(toks) >= 2 or len(needle) >= 6:
+                    hard_miss += 1
+
+        if checked < 2:
+            return 0.0
+
+        delta = 0.0
+        if exact >= 2:
+            # Super-linear: 2→3.0, 3→5.5, 4→8.0 …
+            delta += COMBO_EXACT_BASE + COMBO_EXACT_STEP * (exact - 2)
+            delta += 1.2 * title_exact  # title exact is stronger pin
+        # Mild demote when missing multiple specific constraints (not one sparse miss).
+        if hard_miss >= 2 and exact == 0:
+            delta -= 2.0
+        elif hard_miss >= 1 and exact >= 2:
+            # Full matches still win; partial sibling with a hole gets a small cut
+            delta -= 0.8 * hard_miss
+        return delta
 
     @staticmethod
     def _category_tail(categories: list) -> str:

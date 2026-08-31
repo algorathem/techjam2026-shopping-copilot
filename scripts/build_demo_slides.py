@@ -29,8 +29,11 @@ GOOD = RGBColor(0x34, 0xD3, 0x99)
 GOLD = RGBColor(0xFB, 0xBF, 0x24)
 LINE = RGBColor(0x2A, 0x3A, 0x55)
 
-OUT = Path(__file__).resolve().parents[1] / "docs" / "ShopPilot_Demo_Slides.pptx"
+ROOT = Path(__file__).resolve().parents[1]
+OUT = ROOT / "docs" / "ShopPilot_Demo_Slides.pptx"
+ARCH_PNG = ROOT / "docs" / "architecture_diagram.png"
 W, H = Inches(13.333), Inches(7.5)
+TOTAL_SLIDES = 10
 
 # Live public-200 metrics (results.json) vs weak BM25 baseline
 BASE = {"tech": 0.107, "hit": 0.125, "mrr": 0.068, "mttc": 9.81}
@@ -113,7 +116,7 @@ def _textbox(slide, l, t, w, h, lines, align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TO
     return box
 
 
-def _footer(slide, page: int, total: int = 9, left="ShopPilot · TechJam 2026 Track 4"):
+def _footer(slide, page: int, total: int = TOTAL_SLIDES, left="ShopPilot · TechJam 2026 Track 4"):
     _bar(slide, Inches(0), Inches(7.22), W, Inches(0.04), LINE)
     _textbox(
         slide,
@@ -382,83 +385,141 @@ def slide_solution(prs):
     _footer(s, 3)
 
 
-def slide_architecture(prs):
+def slide_architecture_overview(prs):
+    """Glanceable architecture: 5-step spine + 3 memory/index/optional cards."""
     s = prs.slides.add_slide(prs.slide_layouts[6])
     _bg(s)
     _accent_rail(s)
     _section_label(s, "03  ·  Architecture")
     _title(s, "Multi-turn loop — state is the product")
-    _subtitle(s, "Turn t reads SessionState + utterance. Catalog is immutable after load. LLM is optional, dashed, off by default.")
+    _subtitle(
+        s,
+        "Each turn: past SessionState + current text → Top-10 + one ask. Catalog immutable. LLM optional / off.",
+    )
 
-    # flow row
-    nodes = [
-        (0.5, "User turn", "free text", CYAN),
-        (3.0, "Ingest / NLU", "slots · family · audience", PINK),
-        (5.5, "SessionState", "soft / disclosed / override", VIOLET),
-        (8.0, "Hybrid retrieve", "FTS + dense hash", CYAN),
-        (10.5, "Rank + ask", "Top-10 + ask_attribute", PINK),
+    # 5-step hot path
+    steps = [
+        ("1", "Ingest", "slots · family · audience", CYAN),
+        ("2", "Retrieve", "FTS5 + dense hash", VIOLET),
+        ("3", "Rank", "coverage · priors", GOOD),
+        ("4", "Ask", "other-first ladder", GOLD),
+        ("5", "Respond", "msg + ask + Top-10", PINK),
     ]
-    for i, (x, h, b, col) in enumerate(nodes):
-        _rect(s, Inches(x), Inches(1.75), Inches(2.25), Inches(1.55), CARD, corner=0.1)
-        _bar(s, Inches(x), Inches(1.75), Inches(2.25), Inches(0.07), col)
-        _textbox(s, Inches(x + 0.12), Inches(2.05), Inches(2.0), Inches(0.4), [(h, 14, True, WHITE)])
-        _textbox(s, Inches(x + 0.12), Inches(2.55), Inches(2.0), Inches(0.5), [(b, 12, False, MUTED)])
-        if i < len(nodes) - 1:
+    for i, (n, h, b, col) in enumerate(steps):
+        x = 0.45 + i * 2.55
+        _rect(s, Inches(x), Inches(1.6), Inches(2.35), Inches(1.85), CARD, corner=0.12)
+        _bar(s, Inches(x), Inches(1.6), Inches(2.35), Inches(0.08), col)
+        circ = _oval(s, Inches(x + 0.15), Inches(1.85), Inches(0.42), Inches(0.42), col)
+        tf = circ.text_frame
+        tf.paragraphs[0].alignment = PP_ALIGN.CENTER
+        run = tf.paragraphs[0].add_run()
+        _set_run(run, n, size=14, bold=True, color=BG)
+        try:
+            tf.paragraphs[0].space_before = Pt(4)
+        except Exception:
+            pass
+        _textbox(s, Inches(x + 0.7), Inches(1.9), Inches(1.5), Inches(0.35), [(h, 16, True, WHITE)])
+        _textbox(s, Inches(x + 0.15), Inches(2.55), Inches(2.05), Inches(0.7), [(b, 13, False, MUTED)])
+        if i < len(steps) - 1:
             arr = s.shapes.add_shape(
                 MSO_SHAPE.RIGHT_ARROW,
-                Inches(x + 2.28),
+                Inches(x + 2.38),
                 Inches(2.35),
-                Inches(0.2),
-                Inches(0.25),
+                Inches(0.16),
+                Inches(0.22),
             )
             _shape_fill(arr, MUTED2)
 
-    # callout + design choices
-    _rect(s, Inches(0.5), Inches(3.6), Inches(6.0), Inches(2.9), CARD, corner=0.1)
-    _bar(s, Inches(0.5), Inches(3.6), Inches(0.08), Inches(2.9), CYAN)
+    # bottom three panels
+    panels = [
+        (
+            0.45,
+            "SessionState  ·  mutable",
+            [
+                "soft | disclosed | override sources",
+                "family · audience · asked / filled",
+                "soft-only wipe on mind-change",
+                "next turn = same session_id",
+            ],
+            GOOD,
+        ),
+        (
+            4.6,
+            "Catalog  ·  immutable",
+            [
+                "FTS5 BM25 in-memory",
+                "dense hash 512-d default",
+                "MiniLM opt-in",
+                "50k CSJ freeze · no turn writes",
+            ],
+            VIOLET,
+        ),
+        (
+            8.75,
+            "Optional LLM  ·  gated",
+            [
+                "slots NLU + top-20 rerank",
+                "fail-open timeout → rules",
+                "NOT on default score path",
+                "tokens on default path: 0",
+            ],
+            PINK,
+        ),
+    ]
+    for x, title, lines, col in panels:
+        _rect(s, Inches(x), Inches(3.7), Inches(3.95), Inches(3.05), CARD, corner=0.1)
+        _bar(s, Inches(x), Inches(3.7), Inches(0.1), Inches(3.05), col)
+        _textbox(s, Inches(x + 0.25), Inches(3.9), Inches(3.5), Inches(0.4), [(title, 15, True, col)])
+        body = [(ln, 14, False, WHITE) for ln in lines]
+        _textbox(s, Inches(x + 0.25), Inches(4.45), Inches(3.5), Inches(2.1), body)
+
+    _footer(s, 4)
+
+
+def slide_architecture_diagram(prs):
+    """Full comprehensive diagram — nearly full-bleed (diagram has its own header)."""
+    s = prs.slides.add_slide(prs.slide_layouts[6])
+    _bg(s)
+    # thin top chrome only — avoid double titles with the PNG header
+    _accent_rail(s)
+    _section_label(s, "04  ·  Architecture detail")
     _textbox(
         s,
-        Inches(0.8),
-        Inches(3.8),
-        Inches(5.5),
-        Inches(2.5),
-        [
-            ("Invariant", 13, True, CYAN),
-            ('t₃ "black" ranks with dress + plus + black', 15, True, WHITE),
-            ("— not black alone.", 15, False, MUTED),
-            ("", 8, False, MUTED),
-            ("Next-turn loop reuses the same session_id.", 14, False, MUTED),
-            ("Soft-only override wipe · keep disclosed facts.", 14, False, MUTED),
-            ("Family: dress ≠ dress sandals.", 14, False, MUTED),
-        ],
+        Inches(0.55),
+        Inches(0.48),
+        Inches(12),
+        Inches(0.35),
+        [("End-to-end system diagram", 22, True, WHITE)],
     )
 
-    _rect(s, Inches(6.8), Inches(3.6), Inches(5.9), Inches(2.9), CARD, corner=0.1)
-    _bar(s, Inches(6.8), Inches(3.6), Inches(0.08), Inches(2.9), PINK)
-    _textbox(
-        s,
-        Inches(7.1),
-        Inches(3.8),
-        Inches(5.4),
-        Inches(2.5),
-        [
-            ("Measured design choices", 13, True, PINK),
-            ("other-first + static ask ladder", 14, True, WHITE),
-            ("max-IG ask policy → Tech ~0.72 — rejected", 13, False, MUTED),
-            ("", 6, False, MUTED),
-            ("Dense hash default (NumPy) · MiniLM opt-in", 14, False, WHITE),
-            ("LLM NLU/rerank gated flags only — not score path", 13, False, MUTED),
-            ("Tokens on default path: 0", 14, False, GOOD),
-        ],
-    )
-    _footer(s, 4)
+    if not ARCH_PNG.exists():
+        _rect(s, Inches(0.35), Inches(1.0), Inches(12.6), Inches(5.9), CARD, corner=0.08)
+        _textbox(
+            s,
+            Inches(0.8),
+            Inches(3.5),
+            Inches(11.5),
+            Inches(1.0),
+            [("Missing architecture_diagram.png — run scripts/render_architecture_png.py", 16, False, PINK)],
+            align=PP_ALIGN.CENTER,
+        )
+    else:
+        # nearly full content area
+        s.shapes.add_picture(
+            str(ARCH_PNG),
+            Inches(0.22),
+            Inches(0.95),
+            width=Inches(12.9),
+            height=Inches(6.15),
+        )
+    _footer(s, 5)
 
 
 def slide_results(prs):
     s = prs.slides.add_slide(prs.slide_layouts[6])
     _bg(s)
     _accent_rail(s)
-    _section_label(s, "04  ·  Results")
+    _section_label(s, "05  ·  Results")
     _title(s, "Public 200 — weak BM25 vs ShopPilot")
     _subtitle(s, "Official local_evaluator · SHOPPILOT_DENSE=hash · deterministic seeds")
 
@@ -512,14 +573,14 @@ def slide_results(prs):
             ("Tokens default path: 0", 13, True, GOOD),
         ],
     )
-    _footer(s, 5)
+    _footer(s, 6)
 
 
 def slide_scenarios(prs):
     s = prs.slides.add_slide(prs.slide_layouts[6])
     _bg(s)
     _accent_rail(s)
-    _section_label(s, "05  ·  By scenario")
+    _section_label(s, "06  ·  By scenario")
     _title(s, "Hit@10 holds across buying, browse, override, boundary")
     _subtitle(s, "Override pays more MTTC (mind-change cost) but still Hit 0.967")
 
@@ -554,14 +615,14 @@ def slide_scenarios(prs):
         _rect(s, Inches(8.7), y + Inches(0.65), Inches(max_w), Inches(0.14), RGBColor(0x1E, 0x2A, 0x40), corner=0.5)
         _rect(s, Inches(8.7), y + Inches(0.65), Inches(fill_w), Inches(0.14), CYAN if i % 2 == 0 else PINK, corner=0.5)
 
-    _footer(s, 6)
+    _footer(s, 7)
 
 
 def slide_demo(prs):
     s = prs.slides.add_slide(prs.slide_layouts[6])
     _bg(s)
     _accent_rail(s)
-    _section_label(s, "06  ·  Demo")
+    _section_label(s, "07  ·  Demo")
     _title(s, "Astrid CLI — live multi-turn")
     _subtitle(s, "python3 cli_chat.py --dense hash   ·   /new  /state  /quit")
 
@@ -602,14 +663,14 @@ def slide_demo(prs):
         _bar(s, Inches(8.5), y, Inches(0.08), Inches(1.5), col)
         _textbox(s, Inches(8.8), y + Inches(0.25), Inches(3.8), Inches(0.35), [(h, 15, True, col)])
         _textbox(s, Inches(8.8), y + Inches(0.7), Inches(3.8), Inches(0.6), [(b, 13, False, MUTED)])
-    _footer(s, 7)
+    _footer(s, 8)
 
 
 def slide_impact(prs):
     s = prs.slides.add_slide(prs.slide_layouts[6])
     _bg(s)
     _accent_rail(s)
-    _section_label(s, "07  ·  Impact")
+    _section_label(s, "08  ·  Impact")
     _title(s, "Kit metrics → merchant outcomes")
     _subtitle(s, "Honest framing: offline simulation ≠ live GMV A/B — same job-to-be-done as conversational commerce.")
 
@@ -626,7 +687,7 @@ def slide_impact(prs):
         _textbox(s, Inches(0.95), y + Inches(0.28), Inches(2.0), Inches(0.4), [(k, 16, True, MUTED)])
         _textbox(s, Inches(3.2), y + Inches(0.22), Inches(2.2), Inches(0.5), [(v, 26, True, col)])
         _textbox(s, Inches(5.6), y + Inches(0.3), Inches(6.8), Inches(0.45), [(note, 15, False, WHITE)])
-    _footer(s, 8)
+    _footer(s, 9)
 
 
 def slide_end(prs):
@@ -667,7 +728,7 @@ def slide_end(prs):
         x = Inches(0.9 + i * 3.5)
         _rect(s, x, Inches(5.5), Inches(3.2), Inches(0.55), CARD, corner=0.3, line=col)
         _textbox(s, x, Inches(5.57), Inches(3.2), Inches(0.4), [(lab, 13, True, WHITE)], align=PP_ALIGN.CENTER)
-    _footer(s, 9, left="TechJam 2026 Track 4")
+    _footer(s, 10, left="TechJam 2026 Track 4")
 
 
 def main() -> None:
@@ -677,7 +738,8 @@ def main() -> None:
     slide_title(prs)
     slide_problem(prs)
     slide_solution(prs)
-    slide_architecture(prs)
+    slide_architecture_overview(prs)
+    slide_architecture_diagram(prs)
     slide_results(prs)
     slide_scenarios(prs)
     slide_demo(prs)
@@ -685,8 +747,16 @@ def main() -> None:
     slide_end(prs)
     OUT.parent.mkdir(parents=True, exist_ok=True)
     prs.save(str(OUT))
+    # also drop a copy in Downloads for easy open
+    dl = Path.home() / "Downloads" / "ShopPilot_Project_Deck_Astrid.pptx"
+    try:
+        prs.save(str(dl))
+        print(f"WROTE {dl}")
+    except Exception as e:
+        print(f"Downloads copy skipped: {e}")
     print(f"WROTE {OUT}")
     print(f"slides={len(prs.slides)}")
+    print(f"arch={ARCH_PNG.exists()} {ARCH_PNG}")
     print(f"metrics tech={OURS['tech']} hit={OURS['hit']} mrr={OURS['mrr']} mttc={OURS['mttc']}")
 
 

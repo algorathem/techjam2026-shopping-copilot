@@ -1,0 +1,60 @@
+{
+  "voice": "Samantha",
+  "rate": "170",
+  "total_audio_s": 158.61,
+  "segments": [
+    {
+      "id": "01_title",
+      "title": "Title",
+      "duration_s": 20.76
+    },
+    {
+      "id": "02_problem",
+      "title": "Problem",
+      "duration_s": 13.09
+    },
+    {
+      "id": "03_solution",
+      "title": "Solution",
+      "duration_s": 15.23
+    },
+    {
+      "id": "04_architecture",
+      "title": "Architecture",
+      "duration_s": 24.76
+    },
+    {
+      "id": "05_architecture_detail",
+      "title": "Architecture detail",
+      "duration_s": 11.47
+    },
+    {
+      "id": "06_results",
+      "title": "Results",
+      "duration_s": 16.76
+    },
+    {
+      "id": "07_scenarios",
+      "title": "By scenario",
+      "duration_s": 10.28
+    },
+    {
+      "id": "08_demo",
+      "title": "Astrid CLI",
+      "duration_s": 22.94
+    },
+    {
+      "id": "09_impact",
+      "title": "Impact",
+      "duration_s": 14.02
+    },
+    {
+      "id": "10_end",
+      "title": "Thanks",
+      "duration_s": 9.29
+    }
+  ],
+  "mp4": "/Users/kyecin/Downloads/techjam2026-shopping-copilot/docs/ShopPilot_Demo_Video.mp4",
+  "wav": "/Users/kyecin/Downloads/techjam2026-shopping-copilot/docs/ShopPilot_Demo_Voiceover.wav",
+  "script": "/Users/kyecin/Downloads/techjam2026-shopping-copilot/docs/DEMO_VIDEO_SCRIPT.md"
+}

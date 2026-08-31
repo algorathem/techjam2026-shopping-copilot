@@ -18,3 +18,8 @@ docs/participant_release_checklist.md
 tests/test_5core_builder.py
 tests/test_organizer_pipeline.py
 *.log
+
+# demo AV intermediates (final mp4 is tracked)
+docs/demo_video_audio/
+docs/demo_video_frames/clips/
+docs/ShopPilot_Demo_Voiceover.wav

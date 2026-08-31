@@ -1,113 +1,160 @@
-# Demo video script — ShopPilot (backend / NLP track)
+# Demo video script — ShopPilot + Astrid deck
 
-**Length:** 2:00–3:00  
-**Format:** Screen recording of terminal + 2–3 slides (optional)  
-**Upload:** YouTube → Public → paste URL into Devpost  
+**Length:** ~2:30–3:00  
+**Format:** Deck slides (Astrid cyan/pink) + TTS voiceover (+ optional 30–60s live Astrid CLI cut)  
+**Deck:** `docs/ShopPilot_Demo_Slides.pptx` · rebuild `python3 scripts/build_demo_slides.py`  
+**Video:** `docs/ShopPilot_Demo_Video.mp4` · rebuild `python3 scripts/build_demo_av.py`  
+**Upload:** YouTube → Public → paste into Devpost  
 
-No product UI required. Walkthrough of API / CLI / eval is accepted.
-
----
-
-## Recording setup
-- Terminal font large; hide secrets; no personal files in frame  
-- Repo root: `techjam2026-shopping-copilot`  
-- Catalog already at `data/catalog.jsonl`  
-- `export SHOPPILOT_DENSE=hash`  
-- Do **not** show API keys  
-
-Optional title slide (5s):  
-**ShopPilot — TechJam 2026 Track 4**  
-Offline hybrid shopping agent · Tech ~0.79 · Hit@10 0.93  
+No product UI required. Backend agent + slides are enough.
 
 ---
 
-## Shot list
+## Recording / rebuild setup
 
-### 0:00–0:20 — Problem (talk over terminal or one slide)
-> Static keyword search fails real shoppers: buying vs browsing, mind-changes, vague goals.  
-> This track scores an agent that finds a hidden purchase ASIN in ≤10 turns: Hit@10, MRR, MTTC.
+```bash
+cd ~/Downloads/techjam2026-shopping-copilot
+export SHOPPILOT_DENSE=hash
+# metrics already in results.json — slides read live ballpark Tech 0.907 / Hit 0.975
 
-### 0:20–0:45 — Architecture one-liner
-Show `docs` or draw verbally:
-```text
-message → state (slots/family/override)
-        → hybrid FTS ± dense
-        → Top-10 + ask_attribute
+python3 scripts/build_demo_slides.py
+python3 scripts/render_architecture_png.py   # if architecture PNG stale
+python3 scripts/build_demo_av.py             # TTS + frames + mp4
 ```
-> Offline-first. No required LLM. In-memory only.
 
-### 0:45–1:30 — Live CLI demo (`cli_chat.py`)
+- Terminal font large if you splice real CLI  
+- Hide secrets / no API keys on screen  
+- Do **not** scrape Amazon product images  
+
+**TTS note:** default path uses macOS `say` (offline). Optional cloud TTS only if you set a key yourself — never commit keys.
+
+---
+
+## Slide ↔ timing map (voiceover)
+
+| t | Slide | On-screen | Speak |
+|---|---|---|---|
+| 0:00–0:12 | 01 Title | ShopPilot · Tech 0.907 | Hook + title |
+| 0:12–0:32 | 02 Problem | 4 failure cards | Problem |
+| 0:32–0:50 | 03 Solution | 5-step pipeline | Solution one-liner |
+| 0:50–1:15 | 04 Architecture overview | Ingest→…→Respond + 3 panels | Architecture |
+| 1:15–1:35 | 05 Architecture detail | Full diagram PNG | State loop callout |
+| 1:35–1:55 | 06 Results | KPI + chart | Metrics |
+| 1:55–2:10 | 07 By scenario | Hit/MRR + MTTC | Scenario hold |
+| 2:10–2:40 | 08 Demo | Astrid CLI storyboard | Live-demo narration (or splice real CLI) |
+| 2:40–2:55 | 09 Impact | KPI → merchant | Impact |
+| 2:55–3:05 | 10 Thanks | GitHub | Close |
+
+---
+
+## Full voiceover script (read as-is)
+
+### 1 · Title (0:00–0:12)
+ShopPilot — an offline-first, multi-turn shopping copilot for TechJam twenty twenty-six, Track four.  
+Demo UI is Astrid CLI. On the public two-hundred session kit: Technical Score zero point nine zero seven, Hit at ten zero point nine seven five, mean turns about two point nine — with zero tokens on the default path.
+
+### 2 · Problem (0:12–0:32)
+Keyword search breaks on real shopping intent. Shoppers are vague. “Dress” might mean a garment — or dress sandals. They change their mind mid-session. And the kit gives you at most ten turns to find a hidden Amazon parent A-S-I-N.
+
+### 3 · Solution (0:32–0:50)
+ShopPilot is a headless agent. Every turn returns three things: a message, one ask_attribute, and a Top-ten of A-S-I-Ns.  
+Five steps: ingest, state, hybrid retrieve, clarify, and rank. No required L-L-M.
+
+### 4 · Architecture overview (0:50–1:15)
+Ingest is not just an intent router — it writes the full dialogue state: slots with sources, product family, audience, and soft overrides.  
+Retrieve is hybrid: F-T-S-five plus dense hash, in memory. Rank uses constraint coverage and light priors. Ask is other-first, then a static ladder that skips filled slots.  
+Catalog stays immutable. Optional L-L-M is gated and off the score path.
+
+### 5 · Architecture detail (1:15–1:35)
+Multi-turn means past SessionState plus the current utterance — same session I-D.  
+When the shopper says “black” on turn three, we rank with dress, plus size, and black together — not black alone.
+
+### 6 · Results (1:35–1:55)
+Against the official weak B-M-twenty-five starter: Technical Score from about zero point one one to zero point nine zero seven. Hit at ten from zero point one three to zero point nine eight. Mean turns from about nine point eight down to two point nine. Default path uses zero tokens.
+
+### 7 · By scenario (1:55–2:10)
+Hit holds across buying, browsing, intent override, and boundary. Override costs more turns — as mind-change should — but still lands near Hit zero point nine seven.
+
+### 8 · Demo / Astrid CLI (2:10–2:40)
+In Astrid CLI: “shoes for my son” locks footwear and boys, asks other, and shows Top titles.  
+“Actually forget sneakers — dress shoes, size nine” fires soft-only override: soft prefs wipe, disclosed facts stay, family stays footwear.  
+Dress sandals route to footwear — not garment dresses. Plus size fills size once — we do not re-ask it.
+
+### 9 · Impact (2:40–2:55)
+Kit metrics map to merchant outcomes: Hit is findability, M-R-R is rank quality, mean turns is cost and cognitive load.  
+Same decision core as conversational commerce — catalog-grounded, measurable, runnable offline.
+
+### 10 · Close (2:55–3:05)
+ShopPilot. Offline-first multi-turn shopping copilot.  
+GitHub: github.com/algorathem/techjam2026-shopping-copilot. Thanks.
+
+---
+
+## Optional live CLI splice (30–60s, preferred for YouTube depth)
+
+Record after slide 07 or replace slide 08 narration with screen capture:
 
 ```bash
 export SHOPPILOT_DENSE=hash
 python3 cli_chat.py --dense hash
-# opens Astrid CLI (single demo brand)
 ```
 
-**Scenario A — vague → clarify (browsing)**  
+**A — vague browse**
 ```text
-You: I'm looking for a dress, but I'm still exploring.
-# show ask=other, dress family, Top titles are dresses not sandals
-You: plus size
-# ask moves on; size filled — does NOT re-ask size
-You: party
-You: black
-# /state  → show filled size,style,color
+I'm looking for a dress, but I'm still exploring.
+plus size
+party
+black
+/state
 ```
 
-**Scenario B — family disambiguation (15s)**  
+**B — family**
 ```text
 /new
-You: I'm looking for dress sandals
-# footwear / sandals tops — not garment dresses
+I'm looking for dress sandals
 ```
 
-**Scenario C — override (20s)**  
+**C — override**
 ```text
 /new
-You: I'm looking for running shoes
-You: Actually forget running shoes, I need dress shoes instead. Still size 9.
-# override fires; family stays footwear; constraints update
+I'm looking for running shoes
+Actually forget running shoes, I need dress shoes instead. Still size 9.
 ```
-
-### 1:30–2:10 — Official metrics
-
-```bash
-python3 -m unittest tests.test_agent_slots tests.test_dense -q
-python3 -m evaluator.local_evaluator
-```
-
-Show printed JSON or:
-```bash
-python3 -c "import json;d=json.load(open('results.json'));print(d['recommended_technical_score'], d['hit_rate_at_10'], d['mrr'], d['mttc'])"
-```
-
-Speak:
-> Public 200: TechnicalScore about **0.79**, Hit@10 **0.93**, mean turns about **3.1**, versus starter BM25 about **0.11** Hit **0.13**.  
-> Override hygiene alone moved override Hit from 0.80 to about 0.97.
-
-### 2:10–2:30 — Impact close
-> Same decision core merchants need for findability: intent, state, hybrid recall, clarify, rank—as an API.  
-> Optional MiniLM or Gemini rerank exists; default stays offline for judges.
-
-### 2:30–2:45 — End card
-- GitHub: https://github.com/algorathem/techjam2026-shopping-copilot  
-- “ShopPilot · Track 4 · Offline hybrid shopping agent”
 
 ---
 
-## Audio tips
-- Speak slower than you think; cut dead air in edit  
-- Don’t read the whole README  
-- If eval takes ~1 min, jump-cut to results with a “~60s later” caption  
+## Spoken metrics (keep consistent)
 
-## YouTube
-- Title: `ShopPilot — TechJam 2026 Shopping Copilot (Track 4)`  
-- Description: 2-line summary + GitHub link + “backend agent demo, no UI”  
-- Visibility: **Public**  
-- No Amazon trademark logos; plain terminal is fine  
+| Metric | Weak BM25 | ShopPilot (hash) |
+|---|---:|---:|
+| TechnicalScore | ~0.107 | **~0.907** |
+| Hit@10 | 0.125 | **0.975** |
+| MRR | ~0.068 | **~0.858** |
+| MTTC | ~9.81 | **~2.88** |
+| Tokens | 0 | **0** |
 
-## After upload
-1. Copy public YouTube URL  
-2. Paste into Devpost “Demo video” / description  
-3. Confirm link opens without login  
+TechnicalScore = `0.50×Hit + 0.30×MRR + 0.20×Efficiency`.
+
+---
+
+## Audio / edit tips
+
+- macOS `say` voice default in `build_demo_av.py` is Samantha (override with `SHOPPILOT_TTS_VOICE`)  
+- Speak rate ~175 wpm equivalent; script is already paced for ~3 min  
+- If you re-record live voice, keep the same section order as the slide map  
+- Jump-cut long eval runs; never show API keys  
+- No Amazon logos or scraped product photos  
+
+## YouTube package
+
+- **Title:** `ShopPilot — TechJam 2026 Track 4 Shopping Copilot`  
+- **Description:** Offline-first multi-turn agent · Tech ~0.907 · Hit@10 0.975 · GitHub link · “backend agent demo”  
+- **Visibility:** Public  
+- After upload: paste URL into Devpost  
+
+## Rebuild one-liner
+
+```bash
+python3 scripts/build_demo_slides.py && python3 scripts/build_demo_av.py
+open docs/ShopPilot_Demo_Video.mp4
+```

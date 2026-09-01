@@ -21,7 +21,9 @@ Real-world stakes match the kit: weak search UX drives refine-loops and abandonm
 
 ## Solution
 
-ShopPilot is a headless, offline-first multi-turn shopping agent (demo UI: Astrid CLI). Same API every turn: natural message + one structured ask_attribute + ranked recommendations.
+ShopPilot is a headless, **offline-first** multi-turn shopping agent (demo UI: Astrid CLI). Same API every turn: natural message + one structured ask_attribute + ranked recommendations.
+
+**No external API is required** for scoring or the default demo. Optional cloud LLMs are fail-open and off by default. MiniLM dense, when enabled, is a **local** sentence encoder (on-device embeddings), not a hosted chat API.
 
 ### How it works
 
@@ -37,31 +39,25 @@ ShopPilot is a headless, offline-first multi-turn shopping agent (demo UI: Astri
    - Rich freeform lines fill multiple slots in one turn
 
 3. Clarify when vague
-   - Same turn: Top-10 and a question
-   - First ask = other (simulator can reveal several constraints)
-   - Then a static ask order among open slots (pool "max-IG" asks were A/B'd and hurt score)
+   - Same turn: recommendations and a question
+   - First ask = other (protocol catch-all); optional second other while thin
+   - Then static ladder; max-IG ask order measured and rejected
 
-4. Hybrid retrieve + rank (in-memory)
-   - SQLite FTS5 + optional dense (hash n-grams default; MiniLM opt-in)
-   - Family / audience / constraints / light profile & rating tie-breaks
-   - No required LLM or vector DB
+4. Hybrid retrieve + rank (all local)
+   - In-memory SQLite FTS5 + optional dense hash or local MiniLM
+   - Evidence coverage×exact, category-tail, family/audience, margin-gated Top-K emission
+   - First hit freezes MRR — uncertain turns emit Top-1
 
-5. Measured
-   - Official local evaluator on public 200
+### Results (public 200, official local evaluator)
 
-| | Weak BM25 starter | ShopPilot (hash default) |
-|---|---:|---:|
-| TechnicalScore | ~0.11 | ~0.908 |
-| Hit@10 | 0.125 | 0.975 |
-| MTTC | ~9.8 | ~2.9 |
+| Backend | Tech | Hit@10 | MRR | MTTC | Tokens |
+|---|---:|---:|---:|---:|---:|
+| Weak BM25 starter | ~0.11 | 0.125 | ~0.07 | ~9.8 | 0 |
+| ShopPilot hash (default ship) | **~0.909** | **0.975** | **~0.872** | **~3.01** | **0** |
+| ShopPilot MiniLM (local opt-in) | **~0.910** | **0.980** | ~0.867 | ~2.98 | **0 API** |
 
-Optional Gemini slot-NLU / rerank exists behind flags with rules fallback — not the submit path.
+Judges can disable network: default path still runs. Cloud LLM is never required.
 
-### What we deliberately did not do
+### Offline claim
 
-- No mandatory UI or Amazon image fetch
-- No foundation-model fine-tune
-- No entropy ask policy that dropped Tech to ~0.72
-- No hard "missing word ⇒ delete product" filters that killed true ASINs
-
-In one line: ShopPilot turns messy multi-turn shopper language into state + hybrid retrieval + protocol-safe clarifying questions, so the right ASIN lands in the top 10 in fewer turns — offline, measurable, merchant-owned.
+ShopPilot's default and reported scoring path is fully offline—no external API. Dense MiniLM, when enabled, runs as a local encoder; any cloud LLM is optional, default-off, and unused for the hash ship metrics (Tech ~0.909, 0 tokens).

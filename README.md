@@ -6,19 +6,24 @@ Built on the [official conversational-search kit](https://github.com/TechJam2026
 
 ## Public metrics (200 sessions)
 
-`python -m evaluator.local_evaluator` with `SHOPPILOT_DENSE=hash`:
+`python -m evaluator.local_evaluator` — official weak BM25 starter vs ShopPilot dense backends:
 
-| Metric | Starter BM25 | ShopPilot |
-|---|---:|---:|
-| Hit@10 | 0.125 | **0.975** |
-| MRR | 0.068 | **0.872** |
-| MTTC | 9.81 | **3.01** |
-| Efficiency | 0.119 | **0.800** |
-| TechnicalScore | 0.107 | **0.909** |
+| Metric | Starter BM25 | ShopPilot **hash** (default) | ShopPilot **minilm** (opt-in) |
+|---|---:|---:|---:|
+| Hit@10 | 0.125 | 0.975 | **0.980** |
+| MRR | 0.068 | **0.872** | 0.867 |
+| MTTC | 9.81 | 3.01 | **2.98** |
+| Efficiency | 0.119 | 0.800 | 0.802 |
+| TechnicalScore | 0.107 | 0.909 | **0.910** |
 
 ```text
 TechnicalScore = 0.50·Hit@10 + 0.30·MRR + 0.20·clip((11 − MTTC) / 10, 0, 1)
 ```
+
+**hash** (default): zero extra ML deps beyond optional NumPy; Tech **0.909**.  
+**minilm** (`SHOPPILOT_DENSE=minilm`, local `all-MiniLM-L6-v2`): Tech **0.910** (+0.001), Hit **0.980** (fixes one miss: bathrobe `public_0174`); MRR slightly lower. Still **0 API tokens**.
+
+Hash scenario breakdown (default ship):
 
 | Scenario | N | Hit@10 | MRR | MTTC |
 |---|---:|---:|---:|---:|
@@ -27,7 +32,7 @@ TechnicalScore = 0.50·Hit@10 + 0.30·MRR + 0.20·clip((11 − MTTC) / 10, 0, 1)
 | Intent override | 30 | 0.967 | 0.867 | 4.20 |
 | Boundary | 10 | 1.000 | 0.933 | 3.10 |
 
-Token usage on the default path: **0**.
+MiniLM scenarios: buying Hit **0.988**; browsing MRR **0.862** / MTTC **2.94**; override/boundary unchanged at Hit 0.967 / 1.0. Full tables: `docs/benchmark_dense.md`.
 
 ## Architecture
 

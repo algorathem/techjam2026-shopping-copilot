@@ -8,20 +8,22 @@ Built on the [official conversational-search kit](https://github.com/TechJam2026
 
 `python -m evaluator.local_evaluator` — official weak BM25 starter vs ShopPilot dense backends:
 
-| Metric | Starter BM25 | ShopPilot **hash** (default) | ShopPilot **minilm** (opt-in) |
-|---|---:|---:|---:|
-| Hit@10 | 0.125 | 0.975 | **0.985** |
-| MRR | 0.068 | **0.872** | 0.861 |
-| MTTC | 9.81 | 3.01 | **2.97** |
-| Efficiency | 0.119 | 0.800 | 0.804 |
-| TechnicalScore | 0.107 | 0.909 | **0.912** |
+| Metric | Starter BM25 | **hash** (default) | **minilm** w=15 | **bge** w=18 |
+|---|---:|---:|---:|---:|
+| Hit@10 | 0.125 | 0.975 | **0.985** | 0.980 |
+| MRR | 0.068 | **0.872** | 0.861 | 0.871 |
+| MTTC | 9.81 | 3.01 | 2.97 | **2.96** |
+| Efficiency | 0.119 | 0.800 | 0.804 | 0.805 |
+| TechnicalScore | 0.107 | 0.909 | 0.912 | **0.912** |
 
 ```text
 TechnicalScore = 0.50·Hit@10 + 0.30·MRR + 0.20·clip((11 − MTTC) / 10, 0, 1)
 ```
 
-**hash** (default): zero extra ML deps beyond optional NumPy; Tech **0.909**.  
-**minilm** (`SHOPPILOT_DENSE=minilm`, local `all-MiniLM-L6-v2`, fusion weight **15**): Tech **0.912** (+0.003 vs hash), Hit **0.985** (3 misses); MRR slightly lower. Still **0 API tokens**. Override with `SHOPPILOT_DENSE_WEIGHT`.
+**hash** (default): optional NumPy only; Tech **0.909**.  
+**minilm** (`SHOPPILOT_DENSE=minilm`, `all-MiniLM-L6-v2`, weight **15**): Tech **0.912**, Hit **0.985**.  
+**bge** (`SHOPPILOT_DENSE=bge`, `BAAI/bge-small-en-v1.5`, weight **18**): Tech **0.912**, stronger MRR than MiniLM, Hit 0.980.  
+All local embeddings — **0 API tokens**. Override fusion with `SHOPPILOT_DENSE_WEIGHT`. Details: `docs/benchmark_dense.md`.
 
 Hash scenario breakdown (default ship):
 
@@ -69,7 +71,7 @@ gh release download participant-kit \
   --pattern catalog.jsonl.gz --dir data
 python -c "import gzip,shutil,pathlib; p=pathlib.Path('data'); shutil.copyfileobj(gzip.open(p/'catalog.jsonl.gz','rb'), (p/'catalog.jsonl').open('wb'))"
 
-export SHOPPILOT_DENSE=hash   # none | hash | auto | minilm
+export SHOPPILOT_DENSE=hash   # none | hash | auto | minilm | bge
 python -m unittest discover -s tests -q
 python -m evaluator.local_evaluator
 python cli_chat.py --dense hash
@@ -81,15 +83,18 @@ Optional NumPy for the hash dense lane:
 pip install "numpy>=1.24,<2.1"
 ```
 
-Optional MiniLM dense (`pip install sentence-transformers`, then `SHOPPILOT_DENSE=minilm`) and optional LLM slots/rerank are env-gated and **off by default**. First MiniLM run downloads `all-MiniLM-L6-v2` and caches `data/dense_minilm_all-MiniLM-L6-v2.npz` (gitignored). See `starter/llm_slots.py` / `starter/llm_rerank.py`.
+Optional local ST dense (`sentence-transformers` + torch), still offline after first weight download:
 
 ```bash
-# MiniLM 200-eval (opt-in; scored default stays hash)
 pip install "numpy>=1.24,<2.1" sentence-transformers
+# MiniLM
 export SHOPPILOT_DENSE=minilm
-python scripts/build_minilm_cache.py          # skip if the npz already exists
+python scripts/build_st_cache.py --backend minilm
 python -m evaluator.local_evaluator --output results_minilm.json
-python scripts/eval_subset.py --limit 24      # fast A/B vs hash
+# BGE-small (often best Tech/MRR among ST options)
+export SHOPPILOT_DENSE=bge
+python scripts/build_st_cache.py --backend bge
+python -m evaluator.local_evaluator --output results_bge.json
 ```
 
 ## Policy knobs (scored defaults)

@@ -68,6 +68,21 @@ class DenseBackendTest(unittest.TestCase):
             else:
                 os.environ["SHOPPILOT_DENSE"] = prev
 
+    def test_dense_mode_bge_when_requested(self) -> None:
+        try:
+            import sentence_transformers  # noqa: F401
+        except ImportError:
+            self.skipTest("sentence-transformers not installed")
+        prev = os.environ.get("SHOPPILOT_DENSE")
+        os.environ["SHOPPILOT_DENSE"] = "bge"
+        try:
+            self.assertEqual(dense_mode(), "bge")
+        finally:
+            if prev is None:
+                os.environ.pop("SHOPPILOT_DENSE", None)
+            else:
+                os.environ["SHOPPILOT_DENSE"] = prev
+
     def test_dense_mode_none(self) -> None:
         prev = os.environ.get("SHOPPILOT_DENSE")
         os.environ["SHOPPILOT_DENSE"] = "none"

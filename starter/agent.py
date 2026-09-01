@@ -125,8 +125,10 @@ USE_CASE_TOKENS = (
 DENSE_WEIGHT_BY_BACKEND = {
     "none": 0.0,
     "hash": 4.5,
-    # Public A/B: w=10 → Tech 0.910 Hit 0.980; w=15 → Tech 0.912 Hit 0.985
-    "minilm": 15.0,  # override with SHOPPILOT_DENSE_WEIGHT
+    # Public A/B: MiniLM w=10 → Tech 0.910; w=15 → 0.912 Hit 0.985
+    "minilm": 15.0,
+    # BGE-small-en-v1.5 public A/B: w=18 → Tech 0.9123 Hit 0.980 MRR 0.871
+    "bge": 18.0,
 }
 DENSE_SCORE_WEIGHT = 4.5
 DENSE_RECALL_K = 80

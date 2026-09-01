@@ -724,6 +724,7 @@ class SessionState:
     completion_tokens: int = 0
 
     def add_constraint(self, value: str, source: str = "soft") -> None:
+        """Append a unique constraint with provenance ``soft|disclosed|override``."""
         item = re.sub(r"\s+", " ", value).strip(" -;,.\t\n")
         if len(item) < 3:
             return
@@ -846,6 +847,7 @@ class Agent:
         )
 
     def _build_index(self) -> None:
+        """Load the frozen catalog into FTS5 and an in-memory product dict."""
         cursor = self.connection.cursor()
         cursor.execute(
             "CREATE VIRTUAL TABLE products USING fts5("
@@ -890,6 +892,7 @@ class Agent:
         self.connection.commit()
 
     def reset(self, session_id: str, user_profile: dict) -> None:
+        """Kit hook: start a session with the anonymized aggregate profile."""
         self._sessions[session_id] = SessionState(profile=user_profile or {})
 
     def respond(
@@ -899,6 +902,7 @@ class Agent:
         turn: int,
         top_k: int,
     ) -> dict:
+        """Kit hook: one dialog turn → message, ask_attribute, Top-K ASINs."""
         state = self._sessions.get(session_id)
         if state is None:
             raise RuntimeError("reset must be called before respond")
@@ -1362,6 +1366,7 @@ class Agent:
         return default
 
     def _query_terms(self, state: SessionState) -> list[str]:
+        """High-recall FTS tokens from category, constraints, and recent messages."""
         # High-recall FTS query: keep raw constraint tokens. Aggressive
         # "Imported"/filler stripping lost ~3.5 Hit@10 points on the public set.
         # After intent override, ignore pre-override messages and discarded soft tokens.
@@ -1388,6 +1393,7 @@ class Agent:
         return ordered
 
     def _retrieve(self, state: SessionState, top_k: int) -> list[tuple[str, float]]:
+        """FTS5 ∪ dense candidates, then evidence rank; optional LLM reorder of top-20."""
         terms = self._query_terms(state)
         if not terms and not (state.category or state.constraints):
             return []

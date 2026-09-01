@@ -25,6 +25,7 @@ COLORS = {
 
 
 def rephrase_terms(category: str, constraints: Iterable[str], extra_terms: Iterable[str]) -> list[str]:
+    """Build a short, distinctive token list (materials/colors first, catalog filler dropped)."""
     raw: list[str] = []
     if category:
         raw.extend(category.lower().split())
@@ -52,6 +53,7 @@ def rephrase_terms(category: str, constraints: Iterable[str], extra_terms: Itera
 
 
 def rephrase_brief(category: str, constraints: list[str], dont_care: set[str], tags: list[str]) -> str:
+    """Human-readable shopper brief for optional LLM rerank (not used as FTS query)."""
     bits = []
     if category:
         bits.append(f"category: {category}")

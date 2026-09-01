@@ -10,18 +10,18 @@ Built on the [official conversational-search kit](https://github.com/TechJam2026
 
 | Metric | Starter BM25 | ShopPilot **hash** (default) | ShopPilot **minilm** (opt-in) |
 |---|---:|---:|---:|
-| Hit@10 | 0.125 | 0.975 | **0.980** |
-| MRR | 0.068 | **0.872** | 0.867 |
-| MTTC | 9.81 | 3.01 | **2.98** |
-| Efficiency | 0.119 | 0.800 | 0.802 |
-| TechnicalScore | 0.107 | 0.909 | **0.910** |
+| Hit@10 | 0.125 | 0.975 | **0.985** |
+| MRR | 0.068 | **0.872** | 0.861 |
+| MTTC | 9.81 | 3.01 | **2.97** |
+| Efficiency | 0.119 | 0.800 | 0.804 |
+| TechnicalScore | 0.107 | 0.909 | **0.912** |
 
 ```text
 TechnicalScore = 0.50·Hit@10 + 0.30·MRR + 0.20·clip((11 − MTTC) / 10, 0, 1)
 ```
 
 **hash** (default): zero extra ML deps beyond optional NumPy; Tech **0.909**.  
-**minilm** (`SHOPPILOT_DENSE=minilm`, local `all-MiniLM-L6-v2`): Tech **0.910** (+0.001), Hit **0.980** (fixes one miss: bathrobe `public_0174`); MRR slightly lower. Still **0 API tokens**.
+**minilm** (`SHOPPILOT_DENSE=minilm`, local `all-MiniLM-L6-v2`, fusion weight **15**): Tech **0.912** (+0.003 vs hash), Hit **0.985** (3 misses); MRR slightly lower. Still **0 API tokens**. Override with `SHOPPILOT_DENSE_WEIGHT`.
 
 Hash scenario breakdown (default ship):
 

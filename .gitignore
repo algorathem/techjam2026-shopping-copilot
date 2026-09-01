@@ -9,6 +9,7 @@ results_*.json
 data/catalog.jsonl
 data/catalog.jsonl.gz
 data/dense_*.npz
+data/*_24.json
 data/releases/
 
 # Organizer-only / private

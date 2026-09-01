@@ -2,10 +2,9 @@
 
 Architecture
 ------------
-Default offline path uses a feature-hashed character n-gram encoder when
-NumPy is available (no third-party ML deps). Vectors live in memory / cache
-under ``data/``. MiniLM (sentence-transformers) is explicit opt-in via
-``SHOPPILOT_DENSE=minilm`` and is not required for the scored default path.
+Default dense lane is hashed char n-grams when NumPy is available (no extra ML
+deps). MiniLM (``all-MiniLM-L6-v2``) is opt-in via ``SHOPPILOT_DENSE=minilm``.
+Vectors cache under ``data/dense_*.npz``.
 
 Dense scores are fused additively into the lexical evidence ranker in
 ``starter.agent.Agent._retrieve``; they do not replace FTS5.
@@ -26,19 +25,39 @@ TOKEN_RE = re.compile(r"[a-z0-9]+", re.IGNORECASE)
 HASH_DIM = 512
 NGRAM_N = 3
 DENSE_TOP_K = 80
+MINILM_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+MINILM_CACHE_NAME = "dense_minilm_all-MiniLM-L6-v2.npz"
+
+_MINILM_MODEL = None
+
+
+def _minilm_model():
+    """Load all-MiniLM-L6-v2 once per process (HF cache after first download)."""
+    global _MINILM_MODEL
+    if _MINILM_MODEL is None:
+        from sentence_transformers import SentenceTransformer
+
+        _MINILM_MODEL = SentenceTransformer(MINILM_MODEL_NAME)
+    return _MINILM_MODEL
 
 
 def dense_mode() -> str:
-    """none | hash | minilm — controlled by SHOPPILOT_DENSE env (default: auto)."""
+    """none | hash | minilm — SHOPPILOT_DENSE (default: hash/auto, MiniLM opt-in)."""
     raw = (os.environ.get("SHOPPILOT_DENSE") or "auto").strip().lower()
     if raw in {"0", "none", "off", "false"}:
         return "none"
     if raw in {"minilm", "mini", "st"}:
-        return "minilm"
+        try:
+            import sentence_transformers  # noqa: F401
+            return "minilm"
+        except Exception:
+            try:
+                import numpy  # noqa: F401
+                return "hash"
+            except Exception:
+                return "none"
     if raw in {"hash", "ngram", "1", "true", "on"}:
         return "hash"
-    # auto: prefer cheap hash when numpy exists. MiniLM is explicit-only
-    # (SHOPPILOT_DENSE=minilm) — better MRR when tuned, heavier install.
     try:
         import numpy  # noqa: F401
         return "hash"
@@ -104,6 +123,8 @@ class DenseIndex:
         self.asins: list[str] = []
         self._matrix = None  # numpy ndarray or list[list[float]]
         self._model = None
+        self._q_text: str | None = None
+        self._q_vec = None
         self.enabled = backend != "none"
 
     @classmethod
@@ -148,26 +169,26 @@ class DenseIndex:
     @classmethod
     def _build_minilm(cls, products: dict[str, dict], cache_dir: Path) -> "DenseIndex":
         import numpy as np
-        from sentence_transformers import SentenceTransformer
 
         cache_dir.mkdir(parents=True, exist_ok=True)
-        cache_path = cache_dir / "dense_minilm_all-MiniLM-L6-v2.npz"
+        cache_path = cache_dir / MINILM_CACHE_NAME
         asins = list(products.keys())
         if cache_path.exists():
             payload = np.load(cache_path, allow_pickle=False)
             cached_asins = [str(x) for x in payload["asins"].tolist()]
             if cached_asins == asins:
+                # Cache hit: do not import torch / MiniLM until the first query.
                 index = cls("minilm")
                 index.asins = asins
                 index._matrix = payload["matrix"].astype(np.float32)
                 return index
 
-        model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+        model = _minilm_model()
         texts = [product_text(products[asin])[:800] for asin in asins]
         matrix = model.encode(
             texts,
             batch_size=64,
-            show_progress_bar=False,
+            show_progress_bar=True,
             convert_to_numpy=True,
             normalize_embeddings=True,
         ).astype(np.float32)
@@ -181,17 +202,23 @@ class DenseIndex:
     def encode_query(self, text: str):
         if not self.enabled or self._matrix is None:
             return None
+        if self._q_text == text and self._q_vec is not None:
+            return self._q_vec
         if self.backend == "hash":
             import numpy as np
-            return np.asarray(encode_hash(text, HASH_DIM), dtype=np.float32)
-        if self.backend == "minilm":
+            vec = np.asarray(encode_hash(text, HASH_DIM), dtype=np.float32)
+        elif self.backend == "minilm":
             import numpy as np
             if self._model is None:
-                from sentence_transformers import SentenceTransformer
-                self._model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
-            vec = self._model.encode([text], convert_to_numpy=True, normalize_embeddings=True)[0]
-            return vec.astype(np.float32)
-        return None
+                self._model = _minilm_model()
+            vec = self._model.encode(
+                [text], convert_to_numpy=True, normalize_embeddings=True
+            )[0].astype(np.float32)
+        else:
+            return None
+        self._q_text = text
+        self._q_vec = vec
+        return vec
 
     def search(self, query_text: str, top_k: int = DENSE_TOP_K) -> list[tuple[str, float]]:
         if not self.enabled or self._matrix is None:

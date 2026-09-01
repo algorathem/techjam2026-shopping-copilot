@@ -43,7 +43,7 @@ user turn
 
 **State.** Constraints carry provenance `soft | disclosed | override`. Mind-change (“actually, ignore…”) drops soft prefs, keeps disclosed facts, blocks discarded tokens in FTS, and re-opens `other`.
 
-**Retrieve.** In-memory SQLite FTS5 (OR session terms + AND constraint lane) plus optional dense char-ngram hash (`starter/dense.py`). Catalog is frozen; no external search.
+**Retrieve.** In-memory SQLite FTS5 (OR session terms + AND constraint lane) plus optional dense char-ngram hash (`starter/dense.py`). MiniLM (`all-MiniLM-L6-v2`) is opt-in via `SHOPPILOT_DENSE=minilm`. Catalog is frozen; no external search.
 
 **Rank.** Per-constraint token coverage and exact phrase match, category-tail bonus, product-family / gift-audience adapters, full-match jackpot, weak profile/rating priors. Linear feature fusion — not a trained cross-encoder.
 
@@ -76,7 +76,16 @@ Optional NumPy for the hash dense lane:
 pip install "numpy>=1.24,<2.1"
 ```
 
-Optional MiniLM dense (`sentence-transformers`) and optional LLM slots/rerank are env-gated and **off by default**. See `starter/llm_slots.py` / `starter/llm_rerank.py`.
+Optional MiniLM dense (`pip install sentence-transformers`, then `SHOPPILOT_DENSE=minilm`) and optional LLM slots/rerank are env-gated and **off by default**. First MiniLM run downloads `all-MiniLM-L6-v2` and caches `data/dense_minilm_all-MiniLM-L6-v2.npz` (gitignored). See `starter/llm_slots.py` / `starter/llm_rerank.py`.
+
+```bash
+# MiniLM 200-eval (opt-in; scored default stays hash)
+pip install "numpy>=1.24,<2.1" sentence-transformers
+export SHOPPILOT_DENSE=minilm
+python scripts/build_minilm_cache.py          # skip if the npz already exists
+python -m evaluator.local_evaluator --output results_minilm.json
+python scripts/eval_subset.py --limit 24      # fast A/B vs hash
+```
 
 ## Policy knobs (scored defaults)
 

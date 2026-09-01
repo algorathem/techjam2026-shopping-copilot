@@ -125,7 +125,7 @@ USE_CASE_TOKENS = (
 DENSE_WEIGHT_BY_BACKEND = {
     "none": 0.0,
     "hash": 4.5,
-    "minilm": 10.0,
+    "minilm": 10.0,  # opt-in; override with SHOPPILOT_DENSE_WEIGHT
 }
 DENSE_SCORE_WEIGHT = 4.5
 DENSE_RECALL_K = 80
@@ -1476,6 +1476,12 @@ class Agent:
                     getattr(self._dense, "backend", "none"),
                     DENSE_SCORE_WEIGHT,
                 )
+                raw_w = os.environ.get("SHOPPILOT_DENSE_WEIGHT")
+                if raw_w:
+                    try:
+                        weight = float(raw_w)
+                    except ValueError:
+                        pass
                 base += weight * dense
             scored.append((asin, base))
         scored.sort(key=lambda item: item[1], reverse=True)

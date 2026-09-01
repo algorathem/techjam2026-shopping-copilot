@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 import unittest
 
 from starter.dense import DenseIndex, encode_hash, query_text_from_state, dense_mode
@@ -25,6 +26,47 @@ class DenseBackendTest(unittest.TestCase):
         self.assertIn("walking", text)
         self.assertIn("mesh", text)
         self.assertIn("fit", text)
+
+    def test_dense_mode_hash_forced(self) -> None:
+        prev = os.environ.get("SHOPPILOT_DENSE")
+        os.environ["SHOPPILOT_DENSE"] = "hash"
+        try:
+            self.assertEqual(dense_mode(), "hash")
+        finally:
+            if prev is None:
+                os.environ.pop("SHOPPILOT_DENSE", None)
+            else:
+                os.environ["SHOPPILOT_DENSE"] = prev
+
+    def test_dense_mode_auto_is_hash(self) -> None:
+        try:
+            import numpy  # noqa: F401
+        except ImportError:
+            self.skipTest("numpy not installed")
+        prev = os.environ.get("SHOPPILOT_DENSE")
+        os.environ.pop("SHOPPILOT_DENSE", None)
+        try:
+            self.assertEqual(dense_mode(), "hash")
+        finally:
+            if prev is None:
+                os.environ.pop("SHOPPILOT_DENSE", None)
+            else:
+                os.environ["SHOPPILOT_DENSE"] = prev
+
+    def test_dense_mode_minilm_when_requested(self) -> None:
+        try:
+            import sentence_transformers  # noqa: F401
+        except ImportError:
+            self.skipTest("sentence-transformers not installed")
+        prev = os.environ.get("SHOPPILOT_DENSE")
+        os.environ["SHOPPILOT_DENSE"] = "minilm"
+        try:
+            self.assertEqual(dense_mode(), "minilm")
+        finally:
+            if prev is None:
+                os.environ.pop("SHOPPILOT_DENSE", None)
+            else:
+                os.environ["SHOPPILOT_DENSE"] = prev
 
     def test_dense_mode_none(self) -> None:
         prev = os.environ.get("SHOPPILOT_DENSE")
@@ -69,6 +111,41 @@ class DenseBackendTest(unittest.TestCase):
         self.assertTrue(index.enabled)
         hits = index.search("waterproof chelsea ankle rain boots for women", top_k=2)
         self.assertEqual(hits[0][0], "boot")
+
+    def test_minilm_index_search_returns_neighbors(self) -> None:
+        try:
+            import numpy  # noqa: F401
+            import sentence_transformers  # noqa: F401
+        except ImportError:
+            self.skipTest("sentence-transformers not installed")
+        products = {
+            "boot": {
+                "title": "Women Ankle Rain Boots Waterproof Chelsea",
+                "categories": ["Women", "Shoes", "Boots"],
+                "store": "Asgard",
+                "text": "rubber sole waterproof chelsea rain boot ankle",
+            },
+            "tee": {
+                "title": "Funny Grandma Long Sleeve T-Shirt",
+                "categories": ["Women", "Clothing", "Novelty"],
+                "store": "Generic",
+                "text": "cotton grey graphic tee grandma gift",
+            },
+            "jean": {
+                "title": "Men Relaxed Boot Cut Jean",
+                "categories": ["Men", "Clothing", "Jeans"],
+                "store": "Ariat",
+                "text": "100% cotton zipper closure boot cut jean",
+            },
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            index = DenseIndex.build(products, cache_dir=tmp, backend="minilm")
+            self.assertTrue(index.enabled)
+            self.assertEqual(index.backend, "minilm")
+            hits = index.search("waterproof chelsea ankle rain boots for women", top_k=2)
+            self.assertEqual(hits[0][0], "boot")
+            again = index.search("waterproof chelsea ankle rain boots for women", top_k=2)
+            self.assertEqual(again[0][0], "boot")
 
 
 if __name__ == "__main__":

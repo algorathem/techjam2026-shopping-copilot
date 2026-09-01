@@ -119,6 +119,25 @@ docs/                 Devpost paste, API contract, kit rules
 data/                 public_set.jsonl; catalog.jsonl (local)
 ```
 
+## Future work 
+
+ShopPilot’s ship path is already near the public-200 ceiling (hash Tech ~0.909, MiniLM ~0.912, ≤5 misses). With unlimited time we would not replace the offline hybrid core; we would attack the residual miss tail and the MRR freeze with measured upgrades:
+
+1. Stronger local dense recall. Keep FTS5 as the backbone; swap or stack denser on-device encoders (or multi-field embeddings over title + features + leaf category) and retune late-fusion weights. MiniLM already shows the shape of the gain: Hit 0.975→0.985 at 0 API tokens, with a small MRR trade — a reminder that recall lifts must be gated by emission policy.
+
+2. Field-aware lexical IR. Move from a single text blob to weighted fields (title, bullets, brand, category tail) and add phrase / proximity soft features into the evidence ranker. We would avoid hard boolean filters: on this catalog, hard elimination of missing tokens previously reduced TechnicalScore.
+
+3. Catalog-grounded query expansion. Build a small, high-precision synonym/morphology pack mined from the frozen CSJ corpus and public sessions only — not web-scraped thesauri — to improve recall when shopper language diverges from title tokens.
+
+4. Top-K learned re-ranking. Train a lightweight cross-encoder or pairwise model only on the hybrid shortlist (e.g. top 50), with cross-validated folds on the public 200, optimizing MRR under the same first-hit stopping rule.
+
+5. Joint ask + emission policy. Co-optimize the second-other schedule and margin-gated Top-1/Top-10 emission against TechnicalScore, with hard guardrails so no change ships below the hash floor (~0.909).
+
+We would not revisit pure maximum information-gain ask selection, always-on cloud LLM retrieval, or inventing new ask_attribute values: those either failed A/B on this simulator or violate the kit protocol. Fuzzy/wildcard matching remains valuable for real-world ASR/typos but is out of scope for the official kit assumptions.
+
+Every candidate change would require: unit tests, full public-200 eval, scenario breakdown (buy/browse/override/boundary), and a miss-category autopsy before adoption.
+
+
 ## Data
 
 Catalog and sessions derive from Amazon Reviews 2023 (McAuley Lab, UCSD). See `DATA_ATTRIBUTION.md`. Catalog is read-only.

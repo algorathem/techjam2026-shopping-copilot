@@ -34,3 +34,19 @@ docs/archive_*
 
 # Pitch deck: re-add intentionally when ready (uncomment to ignore while drafting)
 # docs/ShopPilot_Pitch_Deck.pdf
+
+# Local / team draft artifacts (keep docs/ clean: organizer kit only)
+docs/demo_out/
+docs/demo_*
+docs/DEMO_*
+docs/VOICEOVER*
+docs/DEVPOST*
+docs/PROBLEM_SOLUTION*
+docs/ShopPilot_*
+docs/benchmark_*
+docs/*_report.*
+docs/battery_runs/
+docs/state_viz.*
+docs/architecture*
+docs/PITCH*
+docs/archive*
